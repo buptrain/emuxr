@@ -1,0 +1,22 @@
+# Native build products
+/build/
+/native/build/
+
+# Unity generated state
+/unity/[Ll]ibrary/
+/unity/[Tt]emp/
+/unity/[Oo]bj/
+/unity/[Bb]uild/
+/unity/[Bb]uilds/
+/unity/[Ll]ogs/
+/unity/[Uu]ser[Ss]ettings/
+/unity/.utmp/
+/unity/unity_BurstDebugInformation_DoNotShip/
+/unity/test.apk
+
+# Legal / test-fixture boundary
+/third_party/mgba/
+/fixtures/gba/out/
+/unity/Assets/StreamingAssets/gba-fixtures/
+/test-roms/*.gba
+/test-roms/*.bios

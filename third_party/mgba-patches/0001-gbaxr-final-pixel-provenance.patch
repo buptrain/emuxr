@@ -1,0 +1,59 @@
+diff --git a/include/mgba/internal/gba/renderers/video-software.h b/include/mgba/internal/gba/renderers/video-software.h
+--- a/include/mgba/internal/gba/renderers/video-software.h
++++ b/include/mgba/internal/gba/renderers/video-software.h
+@@ -83,4 +83,7 @@ struct GBAVideoSoftwareRenderer {
+ 	struct GBAVideoRenderer d;
+ 
+ 	mColor* outputBuffer;
++	/* Optional caller-owned final-composition diagnostics. */
++	uint32_t* provenanceBuffer;
++	int provenanceStride;
+ 	int outputBufferStride;
+@@ -154,4 +157,5 @@ struct GBAVideoSoftwareRenderer {
+ };
+ 
+ void GBAVideoSoftwareRendererCreate(struct GBAVideoSoftwareRenderer* renderer);
++void GBAVideoSoftwareRendererSetProvenanceBuffer(struct GBAVideoSoftwareRenderer* renderer, uint32_t* buffer, int stride);
+ 
+ CXX_GUARD_START
+diff --git a/src/gba/renderers/video-software.c b/src/gba/renderers/video-software.c
+--- a/src/gba/renderers/video-software.c
++++ b/src/gba/renderers/video-software.c
+@@ -674,4 +674,27 @@ static void GBAVideoSoftwareRendererDrawScanline(struct GBAVideoRenderer* rende
+ 
+ 	GBAVideoSoftwareRendererPostprocessBuffer(softwareRenderer);
+ 
++	if (softwareRenderer->provenanceBuffer) {
++		int x;
++		int windowIndex = 0;
++		for (x = 0; x < GBA_VIDEO_HORIZONTAL_PIXELS; ++x) {
++			uint32_t pixel = softwareRenderer->row[x];
++			uint32_t source = (pixel & FLAG_UNWRITTEN) == FLAG_UNWRITTEN ? 0 :
++				(pixel & FLAG_IS_BACKGROUND) ? 1 + ((pixel & FLAG_INDEX) >> OFFSET_INDEX) : 5;
++			uint32_t priority = (pixel & FLAG_PRIORITY) >> OFFSET_PRIORITY;
++			uint32_t windowFlags = 0;
++			while (windowIndex + 1 < softwareRenderer->nWindows && x >= softwareRenderer->windows[windowIndex].endX) {
++				++windowIndex;
++			}
++			if (GBAWindowControlIsBlendEnable(softwareRenderer->windows[windowIndex].control.packed)) {
++				windowFlags |= 1;
++			}
++			if (pixel & FLAG_OBJWIN) {
++				windowFlags |= 2;
++			}
++			softwareRenderer->provenanceBuffer[y * softwareRenderer->provenanceStride + x] =
++				source | (priority << 8) | ((uint32_t)softwareRenderer->blendEffect << 16) | (windowFlags << 24);
++		}
++	}
++
+ 	if (GBARegisterDISPCNTGetMode(softwareRenderer->dispcnt) != 0) {
+@@ -1114,4 +1137,9 @@ void _updateFlags(struct GBAVideoSoftwareRenderer* renderer, struct GBAVideoSof
+ 	background->flags = flags;
+ 	background->objwinFlags = objwinFlags;
+ 	background->variant = background->target1 && GBAWindowControlIsBlendEnable(renderer->currentWindow.packed) && (renderer->blendEffect == BLEND_BRIGHTEN || renderer->blendEffect == BLEND_DARKEN);
+ }
++
++void GBAVideoSoftwareRendererSetProvenanceBuffer(struct GBAVideoSoftwareRenderer* renderer, uint32_t* buffer, int stride) {
++	renderer->provenanceBuffer = buffer;
++	renderer->provenanceStride = stride;
++}

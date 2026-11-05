@@ -1,0 +1,9 @@
+mGBA upstream pin
+================
+
+Repository: https://github.com/mgba-emu/mgba.git
+Commit: a67176cd3e6bf60a5016d7adc94357142dd12617
+License: Mozilla Public License 2.0 (see the upstream checkout's LICENSE file)
+
+This file pins the ignored local checkout at third_party/mgba. The checkout itself
+is intentionally not committed into this project.

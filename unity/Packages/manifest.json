@@ -1,0 +1,12 @@
+{
+  "dependencies": {
+    "com.google.xr.extensions": "https://github.com/android/android-xr-unity-package.git",
+    "com.unity.render-pipelines.universal": "17.3.0",
+    "com.unity.test-framework": "1.1.33",
+    "com.unity.xr.androidxr-openxr": "1.1.0",
+    "com.unity.xr.compositionlayers": "2.3.0",
+    "com.unity.xr.interaction.toolkit": "3.3.2",
+    "com.unity.xr.management": "4.5.4",
+    "com.unity.xr.openxr": "1.16.1"
+  }
+}
