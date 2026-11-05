@@ -5,7 +5,7 @@ namespace GbaXr
 {
     internal static class GbaNativeBindings
     {
-        internal const uint AbiVersion = 1;
+        internal const uint AbiVersion = 2;
         internal const int Ok = 0;
 
         [StructLayout(LayoutKind.Sequential)]
@@ -24,6 +24,7 @@ namespace GbaXr
             internal ImageView ResolvedRgba;
             internal IntPtr Layers;
             internal uint LayerCount;
+            internal uint LayerSemantics;
             internal IntPtr Provenance;
             internal uint ProvenanceStrideBytes;
         }
@@ -35,6 +36,15 @@ namespace GbaXr
             internal byte Priority;
             internal byte BlendEffect;
             internal byte Window;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct LayerView
+        {
+            internal int Source;
+            internal ImageView Color;
+            internal IntPtr CoverageMask;
+            internal uint Priority;
         }
 
         [DllImport("gba_xr", CallingConvention = CallingConvention.Cdecl)]

@@ -258,7 +258,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9622c69f52085a94aae7b0b11f0eb97b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: GbaXr.Runtime::GbaXr.GbaNativeFrameDriver
-  romRelativePath: gba-fixtures/bg0_priority.gba
+  romRelativePath: gba-fixtures/obj_priority_halfword.gba
   emulatedFramesPerSecond: 60
 --- !u!1 &190796476
 GameObject:

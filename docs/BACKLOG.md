@@ -15,8 +15,8 @@ Acceptance: `ctest` passes on a desktop host. No ROM, BIOS, or third-party emula
 - [x] Pin an upstream mGBA revision and record its license/patch policy.
 - [x] Add an adapter build target that produces an Android `arm64-v8a` shared library.
 - [x] Export the exact 240x160 resolved RGBA frame at VBlank through the C ABI.
-- [~] Create synthetic homebrew ROM fixtures for: BG priority, OBJ priority, alpha blend, brighten/darken, windows, affine BG, and sprite semi-transparency. (BG0 and BG0/BG1 tie contracts are complete.)
-- [~] Generate versioned golden RGBA hashes/images from a known mGBA build; review every golden update. (Resolved-frame and BG0 contracts are approved; BG tie capture is pending.)
+- [x] Create synthetic homebrew ROM fixtures for: BG priority, OBJ priority, alpha blend, brighten/darken, windows, affine BG, and sprite semi-transparency. (Approved contracts cover BG0, BG0/BG1 tie, OBJ/BG tie, normal alpha-blend, brighten, darken, WIN0, affine BG2, and semi-transparent OBJ.)
+- [x] Generate versioned golden RGBA hashes/images from a known mGBA build; review every golden update. (Each synthetic fixture has a reviewed source-ROM SHA-256 and physical Galaxy XR resolved-frame golden.)
 
 Acceptance: 60 Hz-frame stepping produces stable full-frame hashes and no C ABI ownership violations under thread sanitizers on supported desktop targets.
 
@@ -24,9 +24,13 @@ Acceptance: 60 Hz-frame stepping produces stable full-frame hashes and no C ABI 
 
 - [x] Instrument the final PPU composition boundary; lease final source, priority, blend effect, and diagnostic window state with each resolved frame.
 - [x] Add a BG2 bitmap provenance probe and a full-frame BG0 text-mode provenance contract fixture.
+- [x] Add ownership-safe transport for up to six coverage-backed source planes in each bridge lease; keep the resolved-frame path as the fallback when no planes are published.
+- [x] Add a conservative visible-source partition and Unity zero-parallax recomposition check. (It partitions only final visible pixels; it is not yet independent PPU candidate capture.)
+- [x] Add a managed reference compositor for disjoint visible-source lease planes, with explicit overlap/incomplete-coverage failures.
+- [x] Capture a raw Mode 0 BG0 candidate behind a strict byte-exact, no-effects acceptance gate; unsupported content remains a zero-parallax visible partition.
 - [ ] Export BG0–3, OBJ, and backdrop image/mask planes and per-pixel priority/blend metadata.
 - [ ] Preserve window and OBJ mode behavior in the metadata contract.
-- [ ] Add zero-parallax recomposition tests against the resolved oracle for every synthetic fixture.
+- [ ] Add zero-parallax recomposition tests against the resolved oracle for independently captured PPU candidates.
 - [ ] Define a game profile format mapping source classes or regions to authored depth bands.
 
 Acceptance: all supported synthetic modes recompose byte-identically at zero separation; unsupported modes fail explicitly rather than silently rendering a wrong layer.

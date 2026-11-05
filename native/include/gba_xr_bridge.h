@@ -19,7 +19,12 @@
 extern "C" {
 #endif
 
-enum { GBAXR_ABI_VERSION = 1, GBAXR_GBA_WIDTH = 240, GBAXR_GBA_HEIGHT = 160 };
+enum {
+  GBAXR_ABI_VERSION = 2,
+  GBAXR_GBA_WIDTH = 240,
+  GBAXR_GBA_HEIGHT = 160,
+  GBAXR_MAX_LAYERS = 6
+};
 
 typedef struct gbaxr_context gbaxr_context;
 
@@ -47,6 +52,14 @@ typedef enum gbaxr_blend_effect {
   GBAXR_BLEND_DARKEN = 3
 } gbaxr_blend_effect;
 
+typedef enum gbaxr_layer_semantics {
+  GBAXR_LAYERS_NONE = 0,
+  /* Final visible pixels partitioned by provenance. Zero-parallax only. */
+  GBAXR_LAYERS_VISIBLE_PARTITION = 1,
+  /* Independent PPU candidates; eligible for a future depth policy. */
+  GBAXR_LAYERS_INDEPENDENT_CANDIDATES = 2
+} gbaxr_layer_semantics;
+
 /* One final-composition diagnostic record per resolved GBA pixel. `window`
  * is a v1 bitfield: bit 0 is effective window-blend enable; bit 1 indicates
  * an OBJ-window pixel. It is diagnostic state, not a layer-coverage mask. */
@@ -68,7 +81,7 @@ typedef struct gbaxr_image_view {
 typedef struct gbaxr_layer_view {
   gbaxr_source_kind source;
   gbaxr_image_view color;
-  const uint8_t *coverage_mask; /* Optional: one byte per source pixel. */
+  const uint8_t *coverage_mask; /* One byte per source pixel: 0 = transparent. */
   uint32_t priority;
 } gbaxr_layer_view;
 
@@ -77,6 +90,7 @@ typedef struct gbaxr_frame_lease {
   gbaxr_image_view resolved_rgba;
   const gbaxr_layer_view *layers;
   uint32_t layer_count;
+  gbaxr_layer_semantics layer_semantics;
   const uint8_t *provenance; /* Optional, implementation-defined v1 diagnostic data. */
   uint32_t provenance_stride_bytes;
 } gbaxr_frame_lease;
@@ -103,6 +117,19 @@ GBAXR_API gbaxr_status gbaxr_publish_frame(gbaxr_context *context,
                                             const gbaxr_image_view *resolved_rgba,
                                             const gbaxr_pixel_provenance *provenance,
                                             uint32_t provenance_stride_bytes);
+
+/* Producer-only. Copies a resolved frame, optional provenance, and up to one
+ * full-size coverage-backed plane per GBA source into the same lease slot.
+ * The producer retains no pointers after this call. A zero layer count is the
+ * resolved-frame fallback; nonzero layer publishes require unique sources and
+ * a non-NULL coverage mask for every layer. */
+GBAXR_API gbaxr_status gbaxr_publish_frame_layers(gbaxr_context *context,
+                                                   const gbaxr_image_view *resolved_rgba,
+                                                   const gbaxr_pixel_provenance *provenance,
+                                                   uint32_t provenance_stride_bytes,
+                                                   const gbaxr_layer_view *layers,
+                                                   uint32_t layer_count,
+                                                   gbaxr_layer_semantics layer_semantics);
 
 /* The first acquire binds the consumer thread. Lease data stays valid until
  * gbaxr_release_frame. The consumer may hold at most one lease at a time. */

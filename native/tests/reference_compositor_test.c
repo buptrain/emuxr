@@ -13,7 +13,7 @@ static gbaxr_composite_layer make_layer(const uint8_t *pixels, uint32_t priority
   layer.image.row_stride_bytes = 8U;
   layer.priority = priority;
   layer.stable_order = order;
-  layer.blend_mode = GBAXR_BLEND_OPAQUE;
+  layer.blend_mode = GBAXR_REFERENCE_BLEND_OPAQUE;
   return layer;
 }
 
@@ -38,7 +38,7 @@ int main(void) {
   CHECK(actual[4] == 4U && actual[5] == 5U && actual[6] == 6U);
 
   layers[2] = make_layer(alpha_obj, 0U, 0U);
-  layers[2].blend_mode = GBAXR_BLEND_ALPHA;
+  layers[2].blend_mode = GBAXR_REFERENCE_BLEND_ALPHA;
   CHECK(gbaxr_reference_composite(layers, 3U, 2U, 1U, actual) == 0);
   CHECK(actual[0] == 155U && actual[1] == 54U && actual[2] == 53U && actual[3] == 255U);
 

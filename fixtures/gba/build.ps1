@@ -1,7 +1,8 @@
 param(
     [string]$ToolchainBin = "C:\Program Files\Unity\Hub\Editor\6000.3.12f1\Editor\Data\PlaybackEngines\AndroidPlayer\NDK\toolchains\llvm\prebuilt\windows-x86_64\bin",
-    [ValidateSet("frame_sequence", "bg0_priority", "bg_tie")]
+    [ValidateSet("frame_sequence", "bg0_priority", "bg_tie", "obj_priority", "alpha_blend", "brighten", "darken", "window_alpha", "affine_bg2", "obj_alpha")]
     [string]$Fixture = "frame_sequence",
+    [string]$StreamingAssetName,
     [switch]$InstallIntoUnityStreamingAssets
 )
 
@@ -35,8 +36,9 @@ if (-not (Test-Path -LiteralPath $source)) {
 Write-Host "Built synthetic fixture: $rom"
 
 if ($InstallIntoUnityStreamingAssets) {
+    $assetName = if ([string]::IsNullOrWhiteSpace($StreamingAssetName)) { $Fixture } else { $StreamingAssetName }
     $streamingAssets = Join-Path $root "..\..\unity\Assets\StreamingAssets\gba-fixtures"
     New-Item -ItemType Directory -Force -Path $streamingAssets | Out-Null
-    Copy-Item -LiteralPath $rom -Destination (Join-Path $streamingAssets "$Fixture.gba") -Force
+    Copy-Item -LiteralPath $rom -Destination (Join-Path $streamingAssets "$assetName.gba") -Force
     Write-Host "Installed synthetic fixture into Unity StreamingAssets. Rebuild the APK to package it."
 }

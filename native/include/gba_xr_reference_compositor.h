@@ -9,8 +9,8 @@ extern "C" {
 #endif
 
 typedef enum gbaxr_blend_mode {
-  GBAXR_BLEND_OPAQUE = 0,
-  GBAXR_BLEND_ALPHA = 1
+  GBAXR_REFERENCE_BLEND_OPAQUE = 0,
+  GBAXR_REFERENCE_BLEND_ALPHA = 1
 } gbaxr_blend_mode;
 
 typedef struct gbaxr_composite_layer {

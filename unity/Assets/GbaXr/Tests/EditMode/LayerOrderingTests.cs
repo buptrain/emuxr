@@ -18,7 +18,7 @@ namespace GbaXr.Tests
         public void NativeAbiContract_UsesTheExpectedRgbaFrameByteCount()
         {
             Assert.That(GbaTestFrameSurface.Width * GbaTestFrameSurface.Height * 4, Is.EqualTo(153600));
-            Assert.That(GbaNativeBindings.AbiVersion, Is.EqualTo(1));
+            Assert.That(GbaNativeBindings.AbiVersion, Is.EqualTo(2));
         }
 
         [Test]

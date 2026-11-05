@@ -1,4 +1,6 @@
 #include "gba_xr_mgba_adapter.h"
+#include "gba_xr_independent_candidate.h"
+#include "gba_xr_visible_partition.h"
 
 #include <fcntl.h>
 #include <stddef.h>
@@ -9,6 +11,10 @@
 #include <pthread.h>
 #include <stdatomic.h>
 #include <time.h>
+
+#if defined(__ANDROID__)
+#include <android/log.h>
+#endif
 
 #include <mgba/core/core.h>
 #include <mgba/gba/core.h>
@@ -25,6 +31,17 @@ struct gbaxr_mgba_session {
   mColor resolved_native[GBAXR_FRAME_PIXELS];
   uint8_t resolved_rgba[GBAXR_FRAME_PIXELS * 4U];
   gbaxr_pixel_provenance provenance[GBAXR_FRAME_PIXELS];
+  mColor bg0_candidate_native[GBAXR_FRAME_PIXELS];
+  uint8_t bg0_candidate_rgba[GBAXR_FRAME_PIXELS * 4U];
+  uint8_t bg0_candidate_coverage[GBAXR_FRAME_PIXELS];
+  mColor bg1_candidate_native[GBAXR_FRAME_PIXELS];
+  uint8_t bg1_candidate_rgba[GBAXR_FRAME_PIXELS * 4U];
+  uint8_t bg1_candidate_coverage[GBAXR_FRAME_PIXELS];
+  mColor obj_candidate_native[GBAXR_FRAME_PIXELS];
+  uint8_t obj_candidate_rgba[GBAXR_FRAME_PIXELS * 4U];
+  uint8_t obj_candidate_coverage[GBAXR_FRAME_PIXELS];
+  gbaxr_visible_partition visible_partition;
+  int logged_candidate_coverage;
   int rom_loaded;
 };
 
@@ -115,12 +132,27 @@ gbaxr_status gbaxr_mgba_load_rom(gbaxr_mgba_session *session,
     return GBAXR_STATE_ERROR;
   }
   session->core->reset(session->core);
+  /* Start each loaded ROM with no candidate coverage. The software renderer
+   * forces candidate scanlines dirty, and run_frame clears these masks again
+   * before every snapshot. */
+  memset(session->bg0_candidate_coverage, 0, sizeof(session->bg0_candidate_coverage));
+  memset(session->bg1_candidate_coverage, 0, sizeof(session->bg1_candidate_coverage));
+  memset(session->obj_candidate_coverage, 0, sizeof(session->obj_candidate_coverage));
   /* mGBA associates its real software renderer during ROM load/reset. Do not
    * cast the pre-load dummy renderer: its smaller layout contains callbacks. */
   GBAVideoSoftwareRendererSetProvenanceBuffer(
       (struct GBAVideoSoftwareRenderer *)((struct GBA *)session->core->board)->video.renderer,
       (uint32_t *)session->provenance,
       GBAXR_GBA_WIDTH);
+  GBAVideoSoftwareRendererSetBackgroundCandidateBuffer(
+      (struct GBAVideoSoftwareRenderer *)((struct GBA *)session->core->board)->video.renderer,
+      0U, session->bg0_candidate_native, session->bg0_candidate_coverage, GBAXR_GBA_WIDTH);
+  GBAVideoSoftwareRendererSetBackgroundCandidateBuffer(
+      (struct GBAVideoSoftwareRenderer *)((struct GBA *)session->core->board)->video.renderer,
+      1U, session->bg1_candidate_native, session->bg1_candidate_coverage, GBAXR_GBA_WIDTH);
+  GBAVideoSoftwareRendererSetObjCandidateBuffer(
+      (struct GBAVideoSoftwareRenderer *)((struct GBA *)session->core->board)->video.renderer,
+      session->obj_candidate_native, session->obj_candidate_coverage, GBAXR_GBA_WIDTH);
   session->rom_loaded = 1;
   return GBAXR_OK;
 }
@@ -134,19 +166,108 @@ void gbaxr_mgba_unload_rom(gbaxr_mgba_session *session) {
 
 gbaxr_status gbaxr_mgba_run_frame(gbaxr_mgba_session *session) {
   gbaxr_image_view image;
+  gbaxr_layer_view layers[GBAXR_MAX_LAYERS];
+  uint32_t source;
+  uint32_t layer_count = 0U;
   if (session == NULL || session->core == NULL || !session->rom_loaded) {
     return GBAXR_STATE_ERROR;
   }
+  memset(session->bg0_candidate_coverage, 0, sizeof(session->bg0_candidate_coverage));
+  memset(session->bg1_candidate_coverage, 0, sizeof(session->bg1_candidate_coverage));
+  memset(session->obj_candidate_coverage, 0, sizeof(session->obj_candidate_coverage));
   session->core->runFrame(session->core);
   convert_native_to_rgba8(session->resolved_native, session->resolved_rgba);
+  convert_native_to_rgba8(session->bg0_candidate_native, session->bg0_candidate_rgba);
+  convert_native_to_rgba8(session->bg1_candidate_native, session->bg1_candidate_rgba);
+  convert_native_to_rgba8(session->obj_candidate_native, session->obj_candidate_rgba);
   image.rgba8 = session->resolved_rgba;
   image.width = GBAXR_GBA_WIDTH;
   image.height = GBAXR_GBA_HEIGHT;
   image.row_stride_bytes = GBAXR_GBA_WIDTH * 4U;
-  return gbaxr_publish_frame(session->bridge,
-                             &image,
-                             session->provenance,
-                             GBAXR_GBA_WIDTH * (uint32_t)sizeof(*session->provenance));
+  /* A raw candidate may be called independent only when it exactly explains
+   * every resolved pixel without composition effects. Anything broader falls
+   * back to the diagnostic visible partition. */
+  {
+    uint32_t bg0_priority;
+    if (gbaxr_bg0_candidate_recomposes_resolved(session->resolved_rgba, session->provenance,
+                                                 session->bg0_candidate_rgba,
+                                                 session->bg0_candidate_coverage,
+                                                 &bg0_priority)) {
+      layers[0].source = GBAXR_SOURCE_BG0;
+      layers[0].color.rgba8 = session->bg0_candidate_rgba;
+      layers[0].color.width = GBAXR_GBA_WIDTH;
+      layers[0].color.height = GBAXR_GBA_HEIGHT;
+      layers[0].color.row_stride_bytes = GBAXR_GBA_WIDTH * 4U;
+      layers[0].coverage_mask = session->bg0_candidate_coverage;
+      layers[0].priority = bg0_priority;
+      return gbaxr_publish_frame_layers(session->bridge, &image, session->provenance,
+                                        GBAXR_GBA_WIDTH * (uint32_t)sizeof(*session->provenance),
+                                        layers, 1U, GBAXR_LAYERS_INDEPENDENT_CANDIDATES);
+    }
+    if (gbaxr_bg0_bg1_candidates_recompose_resolved(session->resolved_rgba, session->provenance,
+                                                     session->bg0_candidate_rgba, session->bg0_candidate_coverage,
+                                                     session->bg1_candidate_rgba, session->bg1_candidate_coverage,
+                                                     &bg0_priority)) {
+      layers[0].source = GBAXR_SOURCE_BG0;
+      layers[0].color = image;
+      layers[0].color.rgba8 = session->bg0_candidate_rgba;
+      layers[0].coverage_mask = session->bg0_candidate_coverage;
+      layers[0].priority = bg0_priority;
+      layers[1].source = GBAXR_SOURCE_BG1;
+      layers[1].color = image;
+      layers[1].color.rgba8 = session->bg1_candidate_rgba;
+      layers[1].coverage_mask = session->bg1_candidate_coverage;
+      layers[1].priority = bg0_priority;
+      return gbaxr_publish_frame_layers(session->bridge, &image, session->provenance,
+                                        GBAXR_GBA_WIDTH * (uint32_t)sizeof(*session->provenance),
+                                        layers, 2U, GBAXR_LAYERS_INDEPENDENT_CANDIDATES);
+    }
+    if (gbaxr_bg0_obj_candidates_recompose_resolved(session->resolved_rgba, session->provenance,
+                                                     session->bg0_candidate_rgba, session->bg0_candidate_coverage,
+                                                     session->obj_candidate_rgba, session->obj_candidate_coverage,
+                                                     &bg0_priority)) {
+      layers[0].source = GBAXR_SOURCE_BG0; layers[0].color = image; layers[0].color.rgba8 = session->bg0_candidate_rgba; layers[0].coverage_mask = session->bg0_candidate_coverage; layers[0].priority = bg0_priority;
+      layers[1].source = GBAXR_SOURCE_OBJ; layers[1].color = image; layers[1].color.rgba8 = session->obj_candidate_rgba; layers[1].coverage_mask = session->obj_candidate_coverage; layers[1].priority = bg0_priority;
+      return gbaxr_publish_frame_layers(session->bridge, &image, session->provenance, GBAXR_GBA_WIDTH * (uint32_t)sizeof(*session->provenance), layers, 2U, GBAXR_LAYERS_INDEPENDENT_CANDIDATES);
+    }
+  }
+  if (gbaxr_build_visible_partition(session->resolved_rgba, session->provenance,
+                                    &session->visible_partition) != 0) {
+    return GBAXR_STATE_ERROR;
+  }
+#if defined(__ANDROID__)
+  if (!session->logged_candidate_coverage && (session->provenance[0].source == GBAXR_SOURCE_BG0 ||
+      session->provenance[0].source == GBAXR_SOURCE_BG1)) {
+    uint32_t pixel, bg0_count = 0U, bg1_count = 0U;
+    for (pixel = 0U; pixel < GBAXR_FRAME_PIXELS; ++pixel) {
+      bg0_count += session->bg0_candidate_coverage[pixel] != 0U;
+      bg1_count += session->bg1_candidate_coverage[pixel] != 0U;
+    }
+    __android_log_print(ANDROID_LOG_INFO, "GbaXr", "raw candidate coverage: bg0=%u bg1=%u", bg0_count, bg1_count);
+    session->logged_candidate_coverage = 1;
+  }
+#endif
+  for (source = 0U; source < GBAXR_MAX_LAYERS; ++source) {
+    gbaxr_layer_view *layer;
+    if (!session->visible_partition.present[source]) {
+      continue;
+    }
+    layer = &layers[layer_count++];
+    layer->source = (gbaxr_source_kind)source;
+    layer->color.rgba8 = session->visible_partition.rgba[source];
+    layer->color.width = GBAXR_GBA_WIDTH;
+    layer->color.height = GBAXR_GBA_HEIGHT;
+    layer->color.row_stride_bytes = GBAXR_GBA_WIDTH * 4U;
+    layer->coverage_mask = session->visible_partition.coverage[source];
+    layer->priority = session->visible_partition.priority[source];
+  }
+  return gbaxr_publish_frame_layers(session->bridge,
+                                    &image,
+                                    session->provenance,
+                                    GBAXR_GBA_WIDTH * (uint32_t)sizeof(*session->provenance),
+                                    layers,
+                                    layer_count,
+                                    GBAXR_LAYERS_VISIBLE_PARTITION);
 }
 
 static void sleep_for_frame(uint32_t frames_per_second) {

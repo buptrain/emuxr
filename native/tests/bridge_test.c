@@ -55,6 +55,10 @@ static void *publish_once(void *opaque) {
 int main(void) {
   static uint8_t pixels[GBAXR_GBA_WIDTH * GBAXR_GBA_HEIGHT * 4U];
   static gbaxr_pixel_provenance provenance[GBAXR_GBA_WIDTH * GBAXR_GBA_HEIGHT];
+  static uint8_t bg0_rgba[GBAXR_GBA_WIDTH * GBAXR_GBA_HEIGHT * 4U];
+  static uint8_t obj_rgba[GBAXR_GBA_WIDTH * GBAXR_GBA_HEIGHT * 4U];
+  static uint8_t bg0_coverage[GBAXR_GBA_WIDTH * GBAXR_GBA_HEIGHT];
+  static uint8_t obj_coverage[GBAXR_GBA_WIDTH * GBAXR_GBA_HEIGHT];
   gbaxr_context *context = gbaxr_create(GBAXR_ABI_VERSION);
   gbaxr_image_view image = { pixels, GBAXR_GBA_WIDTH, GBAXR_GBA_HEIGHT, GBAXR_GBA_WIDTH * 4U };
   gbaxr_frame_lease lease;
@@ -137,6 +141,40 @@ int main(void) {
   CHECK(((const gbaxr_pixel_provenance *)lease.provenance)[0].blend_effect == GBAXR_BLEND_ALPHA);
   CHECK(gbaxr_release_frame(context, &lease) == GBAXR_OK);
   gbaxr_destroy(context);
+
+  context = gbaxr_create(GBAXR_ABI_VERSION);
+  CHECK(context != NULL);
+  memset(bg0_rgba, 0x11, sizeof(bg0_rgba));
+  memset(obj_rgba, 0x22, sizeof(obj_rgba));
+  memset(bg0_coverage, 0xFF, sizeof(bg0_coverage));
+  memset(obj_coverage, 0x00, sizeof(obj_coverage));
+  CHECK(gbaxr_publish_frame_layers(context, &image, NULL, 0U, NULL, 0U,
+                                   GBAXR_LAYERS_VISIBLE_PARTITION) == GBAXR_INVALID_ARGUMENT);
+  {
+    gbaxr_layer_view layers[2] = {
+      { GBAXR_SOURCE_BG0, { bg0_rgba, GBAXR_GBA_WIDTH, GBAXR_GBA_HEIGHT, GBAXR_GBA_WIDTH * 4U }, bg0_coverage, 2U },
+      { GBAXR_SOURCE_OBJ, { obj_rgba, GBAXR_GBA_WIDTH, GBAXR_GBA_HEIGHT, GBAXR_GBA_WIDTH * 4U }, obj_coverage, 2U }
+    };
+    CHECK(gbaxr_publish_frame_layers(context, &image, NULL, 0U, layers, 2U,
+                                     GBAXR_LAYERS_INDEPENDENT_CANDIDATES) == GBAXR_OK);
+  }
+  /* The bridge owns its copy; producer buffers may immediately be reused. */
+  bg0_rgba[0] = 0xEE;
+  obj_coverage[0] = 0xFF;
+  CHECK(gbaxr_acquire_latest_frame(context, &lease) == GBAXR_OK);
+  CHECK(lease.layers != NULL);
+  CHECK(lease.layer_count == 2U);
+  CHECK(lease.layer_semantics == GBAXR_LAYERS_INDEPENDENT_CANDIDATES);
+  CHECK(lease.layers[0].source == GBAXR_SOURCE_BG0);
+  CHECK(lease.layers[0].priority == 2U);
+  CHECK(lease.layers[0].color.rgba8[0] == 0x11U);
+  CHECK(lease.layers[0].coverage_mask[0] == 0xFFU);
+  CHECK(lease.layers[1].source == GBAXR_SOURCE_OBJ);
+  CHECK(lease.layers[1].color.rgba8[0] == 0x22U);
+  CHECK(lease.layers[1].coverage_mask[0] == 0x00U);
+  CHECK(gbaxr_release_frame(context, &lease) == GBAXR_OK);
+  gbaxr_destroy(context);
+
   puts("bridge mailbox tests passed");
   return 0;
 }

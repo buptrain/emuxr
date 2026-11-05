@@ -20,12 +20,30 @@ add_library(gba_xr_bridge STATIC $<TARGET_OBJECTS:gba_xr_bridge_objects>)
 target_include_directories(gba_xr_bridge PUBLIC include)
 target_compile_features(gba_xr_bridge PUBLIC c_std_11)
 
+add_library(gba_xr_visible_partition STATIC
+  src/visible_partition.c
+)
+target_include_directories(gba_xr_visible_partition PUBLIC include)
+target_compile_features(gba_xr_visible_partition PUBLIC c_std_11)
+set_target_properties(gba_xr_visible_partition PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+add_library(gba_xr_independent_candidate STATIC
+  src/independent_candidate.c
+)
+target_include_directories(gba_xr_independent_candidate PUBLIC include)
+target_compile_features(gba_xr_independent_candidate PUBLIC c_std_11)
+set_target_properties(gba_xr_independent_candidate PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
 if(MSVC)
   target_compile_options(gba_xr_reference PRIVATE /W4 /WX)
   target_compile_options(gba_xr_bridge_objects PRIVATE /W4 /WX)
+  target_compile_options(gba_xr_visible_partition PRIVATE /W4 /WX)
+  target_compile_options(gba_xr_independent_candidate PRIVATE /W4 /WX)
 else()
   target_compile_options(gba_xr_reference PRIVATE -Wall -Wextra -Wpedantic -Werror)
   target_compile_options(gba_xr_bridge_objects PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  target_compile_options(gba_xr_visible_partition PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  target_compile_options(gba_xr_independent_candidate PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 
 option(GBAXR_BUILD_MGBA_ADAPTER "Build the mGBA resolved-frame adapter" OFF)
@@ -82,7 +100,7 @@ if(GBAXR_BUILD_MGBA_ADAPTER)
     ENABLE_VFS
     ENABLE_DIRECTORIES
   )
-  target_link_libraries(gba_xr_mgba_adapter PRIVATE mgba)
+  target_link_libraries(gba_xr_mgba_adapter PRIVATE mgba gba_xr_visible_partition gba_xr_independent_candidate)
   set_target_properties(gba_xr_mgba_adapter PROPERTIES OUTPUT_NAME "gba_xr")
   if(ANDROID)
     # Unity 6000.3.12f1 ships NDK r27. Android 15+ 16 KB page-size devices
@@ -105,4 +123,12 @@ if(BUILD_TESTING)
   add_executable(gba_xr_bridge_tests tests/bridge_test.c)
   target_link_libraries(gba_xr_bridge_tests PRIVATE gba_xr_bridge Threads::Threads)
   add_test(NAME gba_xr_bridge_tests COMMAND gba_xr_bridge_tests)
+
+  add_executable(gba_xr_visible_partition_tests tests/visible_partition_test.c)
+  target_link_libraries(gba_xr_visible_partition_tests PRIVATE gba_xr_visible_partition)
+  add_test(NAME gba_xr_visible_partition_tests COMMAND gba_xr_visible_partition_tests)
+
+  add_executable(gba_xr_independent_candidate_tests tests/independent_candidate_test.c)
+  target_link_libraries(gba_xr_independent_candidate_tests PRIVATE gba_xr_independent_candidate)
+  add_test(NAME gba_xr_independent_candidate_tests COMMAND gba_xr_independent_candidate_tests)
 endif()

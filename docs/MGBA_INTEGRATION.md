@@ -21,7 +21,9 @@ Upstream mGBA currently exposes a core video-pixel interface and its GBA frame-e
 
 Add a small renderer-side diagnostic surface at the final pixel-composition boundary. For each final pixel, record the winning source (backdrop/BG0–3/OBJ), priority, blend operand/effect, and window visibility. Publish this only with the resolved frame. The test fixture proves each field influences the expected pixel before it is used by Unity.
 
-The bridge now reserves a copied `gbaxr_pixel_provenance` plane for this purpose. A null plane explicitly means unsupported; no caller may infer separable source data from the resolved color. Patch `third_party/mgba-patches/0001-gbaxr-final-pixel-provenance.patch` fills this plane from the software renderer's post-composition row flags. It records final source, priority, configured blend effect, and effective window blend/OBJ-window bits; it does not yet export independently recomposable layers.
+The bridge now reserves a copied `gbaxr_pixel_provenance` plane for this purpose. A null plane explicitly means unsupported; no caller may infer separable source data from the resolved color. Patch `third_party/mgba-patches/0001-gbaxr-final-pixel-provenance.patch` tracks the winning source and priority in a parallel diagnostic row during composition, then fills this plane at the final boundary. The parallel row is necessary because mGBA clears ordering flags from its visible row after rejecting an equal-priority candidate. The patch records final source, priority, configured blend effect, and effective window blend/OBJ-window bits.
+
+The same patch also exposes an optional raw Mode 0 background candidate hook. The adapter currently attaches it only to BG0 and accepts it as `INDEPENDENT_CANDIDATES` only when complete coverage, BG0-only final provenance, no blend/window effects, stable priority, and byte-for-byte equality with the resolved frame all hold. Every other frame remains a visible partition; this is intentionally not a general BG/OBJ extraction API.
 
 Keep the hook inside a minimal adapter patch near the pinned GBA software renderer/frame-end boundary. It must have no Unity dependency and no heap allocation during scanline or frame composition.
 
@@ -29,7 +31,7 @@ Keep the hook inside a minimal adapter patch near the pinned GBA software render
 
 Export color plus coverage/mask planes for BG0–3, OBJ, and backdrop, with enough provenance to diagnose non-separable pixels. The adapter must declare a feature unsupported for a fixture if zero-parallax recomposition cannot equal the resolved oracle; it must never silently approximate a layer.
 
-The frame lease already reserves layer and provenance fields. Populate them only after their lifetime is tied to the lease's queue slot. Do not publish pointers into mGBA's working buffers.
+The ABI v2 frame lease supports up to six copied, coverage-backed source planes and labels their semantics as final-visible partition or independent PPU candidates. `gbaxr_publish_frame_layers` validates full GBA dimensions, unique source kinds, non-null coverage masks, and a compatible semantic label, then copies each plane into the same queue slot as the resolved frame. The current adapter uses this transport for a conservative visible-source partition: it places each final resolved pixel into the bucket named by its final provenance, with disjoint coverage. Unity proves these planes recompose the resolved oracle at zero parallax. They are not independent PPU candidate planes, cannot reveal occluded pixels, and must not be displaced for depth. Do not publish pointers into mGBA's working buffers or present this partition as raw layer capture.
 
 ## Required adapter tests
 

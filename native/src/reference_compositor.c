@@ -80,7 +80,7 @@ int gbaxr_reference_composite(const gbaxr_composite_layer *layers,
           break;
         }
         src = selected->image.rgba8 + (size_t)y * selected->image.row_stride_bytes + x * 4U;
-        if (selected->blend_mode == GBAXR_BLEND_ALPHA) {
+        if (selected->blend_mode == GBAXR_REFERENCE_BLEND_ALPHA) {
           alpha_over(dst, src);
         } else {
           copy_pixel(dst, src);
