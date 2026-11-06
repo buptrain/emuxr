@@ -16,6 +16,7 @@ namespace GbaXr
 
         private Texture2D _frameTexture;
         private Renderer _targetRenderer;
+        private readonly byte[] _unityRowOrderRgba = new byte[Width * Height * 4];
 
         private void Awake()
         {
@@ -67,8 +68,26 @@ namespace GbaXr
                 throw new ArgumentException($"Expected {Width * Height * 4} RGBA bytes, received {rgbaPixels.Length}.", nameof(rgbaPixels));
             }
 
-            _frameTexture.LoadRawTextureData(rgbaPixels);
+            // mGBA/bridge rows are top-to-bottom; Texture2D raw data is
+            // addressed from Unity's bottom-left origin. Keep the native
+            // resolved bytes untouched for golden checks and flip only here.
+            CopyTopLeftRgbaToUnityRowOrder(rgbaPixels, _unityRowOrderRgba, Width, Height);
+            _frameTexture.LoadRawTextureData(_unityRowOrderRgba);
             _frameTexture.Apply(false, false);
+        }
+
+        internal static void CopyTopLeftRgbaToUnityRowOrder(byte[] source, byte[] destination, int width, int height)
+        {
+            var rowBytes = width * 4;
+            if (source == null || destination == null || source.Length != rowBytes * height || destination.Length != rowBytes * height)
+            {
+                throw new ArgumentException("Source and destination must be tightly packed RGBA images of the requested dimensions.");
+            }
+
+            for (var y = 0; y < height; y++)
+            {
+                Buffer.BlockCopy(source, y * rowBytes, destination, (height - 1 - y) * rowBytes, rowBytes);
+            }
         }
 
         public static Color32[] CreateDiagnosticFrame()

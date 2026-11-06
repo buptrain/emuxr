@@ -31,6 +31,7 @@ Acceptance: 60 Hz-frame stepping produces stable full-frame hashes and no C ABI 
 - [ ] Export BG0–3, OBJ, and backdrop image/mask planes and per-pixel priority/blend metadata.
 - [ ] Preserve window and OBJ mode behavior in the metadata contract.
 - [ ] Add zero-parallax recomposition tests against the resolved oracle for independently captured PPU candidates.
+- [ ] ABI v3: copy fixed-width per-pixel alpha blend metadata (`effect`, `EVA`, `EVB`, target/window flags) and prove `obj_alpha.gba` against the resolved oracle.
 - [ ] Define a game profile format mapping source classes or regions to authored depth bands.
 
 Acceptance: all supported synthetic modes recompose byte-identically at zero separation; unsupported modes fail explicitly rather than silently rendering a wrong layer.
@@ -41,9 +42,16 @@ Acceptance: all supported synthetic modes recompose byte-identically at zero sep
 - [ ] Install/enable Unity OpenXR: Android XR through XR Plug-in Management; select Vulkan.
 - [ ] Bind the native ABI with safe P/Invoke handles and render-thread texture upload.
 - [ ] Implement a zero-parallax compositor view, then authored depth planes and a mono fallback.
+- [x] Define the first conservative authored depth-band profile and resolved fallback contract in `TWO_POINT_FIVE_D.md`.
 - [ ] Add Unity edit-mode tests for draw ordering, depth mapping, lease disposal, and exact zero-parallax pixel output; add play-mode smoke tests.
 
 Acceptance: an emulator-produced fixture presents at 1:1 pixel scale in Unity and the C# zero-parallax result matches the native golden.
+
+## Stage 3a — authorized ROM smoke test
+
+- [x] Add ignored StreamingAssets staging for a locally user-supplied ROM and app-private copy on launch.
+- [ ] Validate one authorized ROM as a resolved-frame-only Galaxy XR smoke test.
+- [ ] Add controller input, save data, audio, and a system file-picker import path.
 
 ## Stage 4 — device and performance validation
 

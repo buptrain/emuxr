@@ -18,5 +18,6 @@
 /third_party/mgba/
 /fixtures/gba/out/
 /unity/Assets/StreamingAssets/gba-fixtures/
+/unity/Assets/StreamingAssets/gba-user/
 /test-roms/*.gba
 /test-roms/*.bios

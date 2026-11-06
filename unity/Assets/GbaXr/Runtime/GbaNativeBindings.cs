@@ -5,7 +5,7 @@ namespace GbaXr
 {
     internal static class GbaNativeBindings
     {
-        internal const uint AbiVersion = 2;
+        internal const uint AbiVersion = 3;
         internal const int Ok = 0;
 
         [StructLayout(LayoutKind.Sequential)]
@@ -27,6 +27,8 @@ namespace GbaXr
             internal uint LayerSemantics;
             internal IntPtr Provenance;
             internal uint ProvenanceStrideBytes;
+            internal IntPtr BlendMetadata;
+            internal uint BlendMetadataStrideBytes;
         }
 
         [StructLayout(LayoutKind.Sequential)]
@@ -64,6 +66,9 @@ namespace GbaXr
 
         [DllImport("gba_xr", CallingConvention = CallingConvention.Cdecl)]
         internal static extern int gbaxr_mgba_worker_state(IntPtr worker);
+
+        [DllImport("gba_xr", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern void gbaxr_mgba_worker_set_keys(IntPtr worker, uint keys);
 
         [DllImport("gba_xr", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void gbaxr_mgba_worker_destroy(IntPtr worker);

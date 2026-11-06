@@ -133,6 +133,7 @@ GameObject:
   - component: {fileID: 48330079}
   - component: {fileID: 48330083}
   - component: {fileID: 48330084}
+  - component: {fileID: 48330085}
   m_Layer: 0
   m_Name: Quad
   m_TagString: Untagged
@@ -258,8 +259,22 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9622c69f52085a94aae7b0b11f0eb97b, type: 3}
   m_Name: 
   m_EditorClassIdentifier: GbaXr.Runtime::GbaXr.GbaNativeFrameDriver
-  romRelativePath: gba-fixtures/obj_priority_halfword.gba
+  romRelativePath: gba-user/Fire Emblem - Sacred Echoes (Chinese v1.1).gba
   emulatedFramesPerSecond: 60
+  showDeveloperOverlay: 1
+  presentationMode: 4
+--- !u!114 &48330085
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 48330078}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5da0f4b3b660c92468204b9ed37e753a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: GbaXr.Runtime::GbaXr.GbaLayeredSurface
 --- !u!1 &190796476
 GameObject:
   m_ObjectHideFlags: 0

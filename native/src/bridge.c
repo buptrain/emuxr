@@ -280,6 +280,8 @@ gbaxr_status gbaxr_acquire_latest_frame(gbaxr_context *context,
   out_lease->layer_semantics = slot->layer_semantics;
   out_lease->provenance = slot->has_provenance ? (const uint8_t *)slot->provenance : NULL;
   out_lease->provenance_stride_bytes = slot->provenance_stride_bytes;
+  out_lease->blend_metadata = NULL;
+  out_lease->blend_metadata_stride_bytes = 0U;
   unlock_context(context);
   return GBAXR_OK;
 }

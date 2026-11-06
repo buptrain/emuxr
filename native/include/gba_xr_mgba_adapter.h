@@ -39,6 +39,9 @@ GBAXR_API gbaxr_mgba_worker *gbaxr_mgba_worker_start(gbaxr_context *bridge,
                                                        const char *utf8_rom_path,
                                                        uint32_t frames_per_second);
 GBAXR_API int gbaxr_mgba_worker_state(const gbaxr_mgba_worker *worker);
+/* Thread-safe input mailbox. Bits use the public GBA hardware key order:
+ * A=0, B=1, Select=2, Start=3, Right=4, Left=5, Up=6, Down=7, R=8, L=9. */
+GBAXR_API void gbaxr_mgba_worker_set_keys(gbaxr_mgba_worker *worker, uint32_t keys);
 GBAXR_API void gbaxr_mgba_worker_stop(gbaxr_mgba_worker *worker);
 GBAXR_API void gbaxr_mgba_worker_destroy(gbaxr_mgba_worker *worker);
 

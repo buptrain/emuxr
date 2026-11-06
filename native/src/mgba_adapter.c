@@ -1,6 +1,7 @@
 #include "gba_xr_mgba_adapter.h"
 #include "gba_xr_independent_candidate.h"
 #include "gba_xr_visible_partition.h"
+#include "gba_xr_audio_ring.h"
 
 #include <fcntl.h>
 #include <stddef.h>
@@ -43,12 +44,14 @@ struct gbaxr_mgba_session {
   gbaxr_visible_partition visible_partition;
   int logged_candidate_coverage;
   int rom_loaded;
+  gbaxr_audio_ring *audio;
 };
 
 struct gbaxr_mgba_worker {
   pthread_t thread;
   atomic_int stop_requested;
   atomic_int state;
+  atomic_uint keys;
   gbaxr_context *bridge;
   char *rom_path;
   uint32_t frames_per_second;
@@ -88,8 +91,10 @@ gbaxr_mgba_session *gbaxr_mgba_create(gbaxr_context *bridge) {
     return NULL;
   }
   session->bridge = bridge;
+  session->audio = gbaxr_audio_ring_create(8192U);
   session->core = GBACoreCreate();
   if (session->core == NULL || !session->core->init(session->core)) {
+    gbaxr_audio_ring_destroy(session->audio);
     free(session);
     return NULL;
   }
@@ -103,6 +108,7 @@ void gbaxr_mgba_destroy(gbaxr_mgba_session *session) {
   if (session == NULL) {
     return;
   }
+  gbaxr_audio_ring_destroy(session->audio);
   if (session->core != NULL) {
     if (session->rom_loaded) {
       session->core->unloadROM(session->core);
@@ -130,6 +136,13 @@ gbaxr_status gbaxr_mgba_load_rom(gbaxr_mgba_session *session,
   if (!session->core->loadROM(session->core, rom)) {
     rom->close(rom);
     return GBAXR_STATE_ERROR;
+  }
+  /* Let mGBA create/load the conventional sibling .sav file now that the ROM
+   * is in Unity's app-private persistent directory. */
+  if (!mCoreAutoloadSave(session->core)) {
+#if defined(__ANDROID__)
+    __android_log_print(ANDROID_LOG_WARN, "GbaXr", "could not auto-load save data");
+#endif
   }
   session->core->reset(session->core);
   /* Start each loaded ROM with no candidate coverage. The software renderer
@@ -293,6 +306,7 @@ static void *mgba_worker_main(void *opaque) {
 
   atomic_store(&worker->state, GBAXR_MGBA_WORKER_RUNNING);
   while (!atomic_load(&worker->stop_requested)) {
+    session->core->setKeys(session->core, atomic_load(&worker->keys));
     gbaxr_status status = gbaxr_mgba_run_frame(session);
     if (status != GBAXR_OK && status != GBAXR_NO_FRAME) {
       atomic_store(&worker->state, GBAXR_MGBA_WORKER_FRAME_FAILED);
@@ -328,6 +342,7 @@ gbaxr_mgba_worker *gbaxr_mgba_worker_start(gbaxr_context *bridge,
   worker->frames_per_second = frames_per_second;
   atomic_init(&worker->stop_requested, 0);
   atomic_init(&worker->state, GBAXR_MGBA_WORKER_STARTING);
+  atomic_init(&worker->keys, 0U);
   if (pthread_create(&worker->thread, NULL, mgba_worker_main, worker) != 0) {
     free(worker->rom_path);
     free(worker);
@@ -342,6 +357,12 @@ int gbaxr_mgba_worker_state(const gbaxr_mgba_worker *worker) {
     return GBAXR_MGBA_WORKER_INIT_FAILED;
   }
   return atomic_load(&worker->state);
+}
+
+void gbaxr_mgba_worker_set_keys(gbaxr_mgba_worker *worker, uint32_t keys) {
+  if (worker != NULL) {
+    atomic_store(&worker->keys, keys & 0x3FFU);
+  }
 }
 
 void gbaxr_mgba_worker_stop(gbaxr_mgba_worker *worker) {

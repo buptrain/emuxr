@@ -20,7 +20,7 @@ extern "C" {
 #endif
 
 enum {
-  GBAXR_ABI_VERSION = 2,
+  GBAXR_ABI_VERSION = 3,
   GBAXR_GBA_WIDTH = 240,
   GBAXR_GBA_HEIGHT = 160,
   GBAXR_MAX_LAYERS = 6
@@ -70,6 +70,13 @@ typedef struct gbaxr_pixel_provenance {
   uint8_t window;
 } gbaxr_pixel_provenance;
 
+typedef struct gbaxr_blend_metadata {
+  uint8_t effect;
+  uint8_t eva;
+  uint8_t evb;
+  uint8_t flags;
+} gbaxr_blend_metadata;
+
 /* All pixel buffers are row-major, non-premultiplied RGBA8. */
 typedef struct gbaxr_image_view {
   const uint8_t *rgba8;
@@ -93,6 +100,8 @@ typedef struct gbaxr_frame_lease {
   gbaxr_layer_semantics layer_semantics;
   const uint8_t *provenance; /* Optional, implementation-defined v1 diagnostic data. */
   uint32_t provenance_stride_bytes;
+  const uint8_t *blend_metadata;
+  uint32_t blend_metadata_stride_bytes;
 } gbaxr_frame_lease;
 
 /* Creation binds the producer thread. The opaque context owns core and queue state. */

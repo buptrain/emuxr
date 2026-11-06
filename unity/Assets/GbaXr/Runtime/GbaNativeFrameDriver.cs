@@ -1,9 +1,11 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using UnityEngine;
 using UnityEngine.Networking;
+using UnityEngine.InputSystem;
 
 namespace GbaXr
 {
@@ -13,8 +15,17 @@ namespace GbaXr
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(GbaTestFrameSurface))]
+    [RequireComponent(typeof(GbaLayeredSurface))]
     public sealed class GbaNativeFrameDriver : MonoBehaviour
     {
+        public enum PresentationMode
+        {
+            Auto,
+            ForceResolved,
+            ForceProfile,
+            ForceUnprofiledCandidates,
+            UnsafeVisiblePartition
+        }
         private const string SyntheticFixturePath = "gba-fixtures/frame_sequence.gba";
         private const string Bg0PriorityFixturePath = "gba-fixtures/bg0_priority.gba";
         private const string BgTieFixturePath = "gba-fixtures/bg_tie.gba";
@@ -49,6 +60,7 @@ namespace GbaXr
         private readonly byte[] _partitionComposite = new byte[GbaTestFrameSurface.Width * GbaTestFrameSurface.Height * 4];
         private readonly byte[] _partitionCounts = new byte[GbaTestFrameSurface.Width * GbaTestFrameSurface.Height];
         private GbaTestFrameSurface _surface;
+        private GbaLayeredSurface _layeredSurface;
         private IntPtr _bridge;
         private IntPtr _worker;
         private bool _started;
@@ -57,13 +69,26 @@ namespace GbaXr
         private bool _verifiedFixtureHash;
         private bool _verifiedProvenanceContract;
         private bool _verifiedVisiblePartition;
+        private bool _unsafeVisiblePartitionVerified;
         private bool _verifiedIndependentBg0;
         private bool _verifiedIndependentBgTie;
         private bool _verifiedIndependentObj;
+        [SerializeField] private bool showDeveloperOverlay = true;
+        [SerializeField] private PresentationMode presentationMode = PresentationMode.Auto;
+        private bool _profileActive;
+        private bool _usingUnsafeVisiblePartition;
+        private bool _loggedUnprofiledRomFallback;
+        private bool _loggedForcedUnprofiledCandidates;
+        private bool _loggedUnsafeVisiblePartition;
+        private PresentationMode _lastNonResolvedPresentationMode;
 
         private void Awake()
         {
             _surface = GetComponent<GbaTestFrameSurface>();
+            _layeredSurface = GetComponent<GbaLayeredSurface>() ?? gameObject.AddComponent<GbaLayeredSurface>();
+            _lastNonResolvedPresentationMode = presentationMode == PresentationMode.ForceResolved
+                ? PresentationMode.Auto
+                : presentationMode;
         }
 
         private void OnEnable()
@@ -82,15 +107,16 @@ namespace GbaXr
             // Packaged synthetic fixtures are versioned source artifacts. Refresh them on
             // each launch so a rebuilt APK cannot accidentally run an earlier persistent
             // copy. Other paths retain their persistent-file behavior for user fixtures.
-            var isPackagedSyntheticFixture = romRelativePath.StartsWith("gba-fixtures/", StringComparison.Ordinal);
-            if (!File.Exists(romPath) || isPackagedSyntheticFixture)
+            var isPackagedStagedRom = romRelativePath.StartsWith("gba-fixtures/", StringComparison.Ordinal) ||
+                                     romRelativePath.StartsWith("gba-user/", StringComparison.Ordinal);
+            if (!File.Exists(romPath) || isPackagedStagedRom)
             {
                 yield return CopyPackagedFixtureIfPresent(romPath);
             }
 
             if (!File.Exists(romPath))
             {
-                Debug.LogWarning($"GBA XR: no fixture ROM at {romPath}. The diagnostic frame remains visible.");
+                Debug.LogWarning($"GBA XR: no staged ROM at {romPath}. The diagnostic frame remains visible.");
                 _initializationRoutine = null;
                 yield break;
             }
@@ -159,6 +185,8 @@ namespace GbaXr
                 _started = false;
                 return;
             }
+            HandlePresentationModeToggle();
+            GbaNativeBindings.gbaxr_mgba_worker_set_keys(_worker, ReadGamepadKeys());
 
             if (GbaNativeBindings.gbaxr_acquire_latest_frame(_bridge, out var lease) != GbaNativeBindings.Ok)
             {
@@ -177,7 +205,19 @@ namespace GbaXr
                 }
 
                 Marshal.Copy(lease.ResolvedRgba.Rgba8, _rgbaFrame, 0, _rgbaFrame.Length);
+                UpdatePresentationProfile(lease);
                 _surface.UploadRgba32(_rgbaFrame);
+                var presentedLayeredContent = _profileActive && _layeredSurface != null &&
+                                              _layeredSurface.Present(lease, _usingUnsafeVisiblePartition);
+                var resolvedRenderer = _surface.GetComponent<Renderer>();
+                if (resolvedRenderer != null)
+                {
+                    resolvedRenderer.enabled = !presentedLayeredContent;
+                }
+                if (!presentedLayeredContent && _layeredSurface != null)
+                {
+                    _layeredSurface.Hide();
+                }
                 VerifySyntheticFixtureHash(lease);
                 VerifyBg0PriorityProvenanceContract(lease);
                 VerifyBgTieProvenanceContract(lease);
@@ -829,6 +869,7 @@ namespace GbaXr
             Debug.Log(
                 $"GBA XR: visible-source partition verified: {lease.LayerCount} disjoint lease plane(s) " +
                 "recompose the resolved frame at zero parallax.");
+            _unsafeVisiblePartitionVerified = true;
         }
 
         private void VerifyIndependentBg0Candidate(GbaNativeBindings.FrameLease lease)
@@ -946,6 +987,146 @@ namespace GbaXr
             return true;
         }
 
+        private void UpdatePresentationProfile(GbaNativeBindings.FrameLease lease)
+        {
+            var unsafeVisiblePartitionRequested = presentationMode == PresentationMode.UnsafeVisiblePartition;
+            var unsafeVisiblePartitionAvailable = unsafeVisiblePartitionRequested && _unsafeVisiblePartitionVerified &&
+                                                 lease.LayerSemantics == 1 &&
+                                                 HasValidUnsafeVisiblePartition(lease);
+            if (unsafeVisiblePartitionRequested && !_loggedUnsafeVisiblePartition)
+            {
+                _loggedUnsafeVisiblePartition = true;
+                Debug.LogWarning(
+                    "GBA XR: UNSAFE visible-partition mode maps final source pixels to depth bands. " +
+                    "It can reveal missing occluded pixels, break blending, or show holes during head motion.");
+            }
+
+            var forcingUnprofiledCandidates = presentationMode == PresentationMode.ForceUnprofiledCandidates;
+            var profileAllowedByRom = GbaPresentationProfilePolicy.AllowsCandidateDepth(
+                romRelativePath,
+                forcingUnprofiledCandidates);
+            if (forcingUnprofiledCandidates && !_loggedForcedUnprofiledCandidates)
+            {
+                _loggedForcedUnprofiledCandidates = true;
+                Debug.LogWarning(
+                    "GBA XR: developer force mode bypasses the ROM profile allow-list. " +
+                    "Only native independent-candidate frames may enter 2.5D; all other frames remain resolved.");
+            }
+            else if (!unsafeVisiblePartitionRequested && !profileAllowedByRom && !_loggedUnprofiledRomFallback)
+            {
+                _loggedUnprofiledRomFallback = true;
+                Debug.Log("GBA XR: no approved 2.5D profile for this ROM; keeping the resolved-frame presentation.");
+            }
+
+            var verifiedCandidates = profileAllowedByRom && lease.LayerSemantics == 2 && lease.Layers != IntPtr.Zero &&
+                                     lease.LayerCount > 0 && HasSupportedDepthProfile(lease);
+            var nextActive = unsafeVisiblePartitionRequested
+                ? unsafeVisiblePartitionAvailable
+                : presentationMode != PresentationMode.ForceResolved && verifiedCandidates;
+            if (presentationMode == PresentationMode.ForceProfile && !verifiedCandidates)
+            {
+                nextActive = false;
+            }
+            var nextUsesUnsafeVisiblePartition = nextActive && unsafeVisiblePartitionAvailable;
+            if (nextActive == _profileActive && nextUsesUnsafeVisiblePartition == _usingUnsafeVisiblePartition) return;
+            _profileActive = nextActive;
+            _usingUnsafeVisiblePartition = nextUsesUnsafeVisiblePartition;
+            if (!_profileActive && _layeredSurface != null) _layeredSurface.Hide();
+            Debug.Log(_profileActive
+                ? _usingUnsafeVisiblePartition
+                    ? $"GBA XR: unsafe visible-partition profile armed for {lease.LayerCount} source plane(s)."
+                    : $"GBA XR: 2.5D profile armed for {lease.LayerCount} verified candidate plane(s)."
+                : "GBA XR: resolved-frame fallback selected (profile unavailable or disabled).");
+        }
+
+        private static bool HasValidUnsafeVisiblePartition(GbaNativeBindings.FrameLease lease)
+        {
+            if (lease.Layers == IntPtr.Zero || lease.LayerCount == 0 || lease.LayerCount > 6)
+            {
+                return false;
+            }
+
+            var sources = new HashSet<int>();
+            var layerSize = Marshal.SizeOf<GbaNativeBindings.LayerView>();
+            for (var index = 0; index < (int)lease.LayerCount; index++)
+            {
+                var layer = Marshal.PtrToStructure<GbaNativeBindings.LayerView>(IntPtr.Add(lease.Layers, index * layerSize));
+                if (layer.Color.Rgba8 == IntPtr.Zero || layer.CoverageMask == IntPtr.Zero ||
+                    layer.Color.Width != GbaTestFrameSurface.Width ||
+                    layer.Color.Height != GbaTestFrameSurface.Height ||
+                    layer.Color.RowStrideBytes != GbaTestFrameSurface.Width * 4 ||
+                    !sources.Add(layer.Source) ||
+                    !GbaUnsafeVisiblePartitionProfile.TryGetDepth(layer.Source, out _))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static bool HasSupportedDepthProfile(GbaNativeBindings.FrameLease lease)
+        {
+            var sources = new HashSet<int>();
+            var layerSize = Marshal.SizeOf<GbaNativeBindings.LayerView>();
+            uint? sharedPriority = null;
+            for (var index = 0; index < (int)lease.LayerCount; index++)
+            {
+                var layer = Marshal.PtrToStructure<GbaNativeBindings.LayerView>(IntPtr.Add(lease.Layers, index * layerSize));
+                if (!GbaDepthProfile.TryGetDepth(layer.Source, layer.Priority, out _) ||
+                    !sources.Add(layer.Source))
+                {
+                    return false;
+                }
+                if (sharedPriority.HasValue && sharedPriority.Value != layer.Priority)
+                {
+                    return false;
+                }
+                sharedPriority = layer.Priority;
+            }
+            return GbaDepthProfile.SupportsSourceSet(sources);
+        }
+
+        private static uint ReadGamepadKeys()
+        {
+            var gamepad = Gamepad.current;
+            if (gamepad == null) return 0U;
+            uint keys = 0U;
+            if (gamepad.buttonSouth.isPressed) keys |= 1U << 0; // Xbox A
+            if (gamepad.buttonEast.isPressed) keys |= 1U << 1;  // Xbox B
+            if (gamepad.selectButton.isPressed) keys |= 1U << 2;
+            if (gamepad.startButton.isPressed) keys |= 1U << 3;
+            if (gamepad.dpad.right.isPressed) keys |= 1U << 4;
+            if (gamepad.dpad.left.isPressed) keys |= 1U << 5;
+            if (gamepad.dpad.up.isPressed) keys |= 1U << 6;
+            if (gamepad.dpad.down.isPressed) keys |= 1U << 7;
+            if (gamepad.rightShoulder.isPressed) keys |= 1U << 8;
+            if (gamepad.leftShoulder.isPressed) keys |= 1U << 9;
+            return keys;
+        }
+
+        private void HandlePresentationModeToggle()
+        {
+            // Xbox Y is not mapped to a GBA key. It toggles only the Unity
+            // presentation path, allowing an on-headset A/B check against the
+            // canonical resolved surface without restarting the emulator.
+            if (Gamepad.current == null || !Gamepad.current.buttonNorth.wasPressedThisFrame)
+            {
+                return;
+            }
+
+            if (presentationMode == PresentationMode.ForceResolved)
+            {
+                presentationMode = _lastNonResolvedPresentationMode;
+                Debug.Log($"GBA XR: controller restored {presentationMode} presentation mode.");
+            }
+            else
+            {
+                _lastNonResolvedPresentationMode = presentationMode;
+                presentationMode = PresentationMode.ForceResolved;
+                Debug.Log("GBA XR: controller selected resolved-frame fallback.");
+            }
+        }
+
         private string DescribePixel(int x, int y)
         {
             var offset = (y * GbaTestFrameSurface.Width + x) * 4;
@@ -960,6 +1141,15 @@ namespace GbaXr
                 _initializationRoutine = null;
             }
             DisposeNative();
+        }
+
+        private void OnGUI()
+        {
+            if (!showDeveloperOverlay || Application.platform != RuntimePlatform.Android) return;
+            GUI.Box(new Rect(16, 16, 520, 120), "GBA XR Test Console");
+            GUI.Label(new Rect(28, 44, 495, 24), $"ROM: {romRelativePath}");
+            GUI.Label(new Rect(28, 68, 495, 24), $"Worker: {(_worker == IntPtr.Zero ? "stopped" : GbaNativeBindings.gbaxr_mgba_worker_state(_worker).ToString())}");
+            GUI.Label(new Rect(28, 92, 495, 24), $"Gamepad: {(Gamepad.current == null ? "none" : Gamepad.current.displayName)}");
         }
 
         private void DisposeNative()
