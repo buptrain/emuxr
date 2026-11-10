@@ -39,9 +39,30 @@ GBAXR_API gbaxr_mgba_worker *gbaxr_mgba_worker_start(gbaxr_context *bridge,
                                                        const char *utf8_rom_path,
                                                        uint32_t frames_per_second);
 GBAXR_API int gbaxr_mgba_worker_state(const gbaxr_mgba_worker *worker);
+/* Updates the worker pacing target atomically. The change is observed at the
+ * next frame boundary and does not touch mGBA state from the Unity thread. */
+GBAXR_API int gbaxr_mgba_worker_set_frames_per_second(gbaxr_mgba_worker *worker,
+                                                       uint32_t frames_per_second);
 /* Thread-safe input mailbox. Bits use the public GBA hardware key order:
  * A=0, B=1, Select=2, Start=3, Right=4, Left=5, Up=6, Down=7, R=8, L=9. */
 GBAXR_API void gbaxr_mgba_worker_set_keys(gbaxr_mgba_worker *worker, uint32_t keys);
+/* Bounded, thread-safe PCM handoff for exactly one Unity audio consumer.
+ * Frames are interleaved stereo signed-16 PCM resampled to 48 kHz by the
+ * producer worker; this API never enters mGBA from Unity's audio thread. */
+GBAXR_API uint32_t gbaxr_mgba_worker_read_audio_pcm_s16(gbaxr_mgba_worker *worker,
+                                                         int16_t *stereo_interleaved,
+                                                         uint32_t max_frames);
+GBAXR_API uint32_t gbaxr_mgba_worker_audio_available_frames(const gbaxr_mgba_worker *worker);
+GBAXR_API uint32_t gbaxr_mgba_worker_audio_pcm_sample_rate(const gbaxr_mgba_worker *worker);
+GBAXR_API uint32_t gbaxr_mgba_worker_mgba_audio_sample_rate(const gbaxr_mgba_worker *worker);
+GBAXR_API uint64_t gbaxr_mgba_worker_audio_dropped_frames(const gbaxr_mgba_worker *worker);
+/* Requests a single-slot state operation. The caller waits only until the
+ * worker has reached the next completed-frame boundary and run mGBA's state
+ * serialization on its owning thread. Paths must be app-private UTF-8 paths. */
+GBAXR_API int gbaxr_mgba_worker_save_state(gbaxr_mgba_worker *worker,
+                                           const char *utf8_state_path);
+GBAXR_API int gbaxr_mgba_worker_load_state(gbaxr_mgba_worker *worker,
+                                           const char *utf8_state_path);
 GBAXR_API void gbaxr_mgba_worker_stop(gbaxr_mgba_worker *worker);
 GBAXR_API void gbaxr_mgba_worker_destroy(gbaxr_mgba_worker *worker);
 

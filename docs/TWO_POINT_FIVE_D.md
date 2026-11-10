@@ -19,12 +19,14 @@ disabled whenever the lease semantics are not `INDEPENDENT_CANDIDATES`.
 
 ## Physical validation sequence
 
-1. Use `bg_tie.gba`; toggle Xbox **Y** to confirm BG1 moves 1 cm behind BG0
+1. Use `bg_tie.gba`; select the approved profile from the Xbox **R3** admin
+   console to confirm BG1 moves 1 cm behind BG0
    while cyan remains left and magenta remains right.
-2. Use `obj_priority_halfword.gba`; toggle Xbox **Y** to confirm the magenta
+2. Use `obj_priority_halfword.gba`; select the approved profile from the Xbox
+   **R3** admin console to confirm the magenta
    64 × 64 OBJ moves 2 cm in front of the cyan BG0 plane while its footprint
    and colors remain unchanged.
-3. If a fixture is not published as independent candidates, the same control
+3. If a fixture is not published as independent candidates, the selected mode
    must retain the resolved frame and log the fallback selection.
 
 ## Profile authorization
@@ -44,12 +46,36 @@ still switch to the resolved surface. Expect profile activation to be
 intermittent in an unprofiled game. It is a diagnostic tool, not a supported
 commercial-ROM presentation mode.
 
-### Unsafe visible-partition experiment
+### Force-partition experiments
 
-`UnsafeVisiblePartition` places every final visible-source lease plane at a
+`ForcePartition` places every final visible-source lease plane at a
 fixed experimental depth: OBJ −2 cm, BG0 0 cm, BG1 +1 cm, BG2 +2 cm, BG3
 +3 cm, and backdrop +4 cm. It accepts only a well-formed `VISIBLE_PARTITION`
 lease and still verifies dimensions, unique source IDs, and coverage pointers.
+
+`ForcePartitionParallax` retains the standard `ForcePartition` depth bands and
+adds an explicitly unsafe horizontal viewpoint experiment. It measures camera
+movement along the screen-local X axis from a reference pose and offsets each
+source geometrically: `(-layerLocalZ / abs(cameraLocalZToBg0)) × filteredLocalXDelta`.
+The standard bands therefore move foreground OBJ with the observer, keep BG0
+fixed, and move background bands oppositely; for example, a 1 cm BG1 separation
+at a 5 cm eye distance yields `−0.2×` the head delta. Every output is clamped to
+±2 cm, and eye distances below 1 mm use the resolved-frame fallback. The reference resets when this mode
+is entered and after a material screen-pose change; it is not reset per frame.
+Its camera-local input uses an 80 ms smoothing time constant and a continuous
+1.5 mm dead zone. A pose rebase preserves the existing filtered offset rather
+than snapping the planes to zero; normal anchor jitter does not qualify as a
+rebase (5 cm / 5° threshold).
+
+`ForcePartitionExtendedParallax` uses 5 cm depth bands: OBJ −5 cm, BG0 0 cm,
+BG1 +5 cm, BG2 +10 cm, BG3 +15 cm, and backdrop +20 cm. It combines these with
+the same viewpoint tracking, smoothing, fallback, and ±2 cm offset clamp.
+Parallax uses each extended band's actual depth, so it reaches the clamp sooner
+than the standard mode. Each plane also scales by its eye distance divided by
+the eye-to-BG0 distance: at a one metre eye distance OBJ is 95% of BG0 and BG1
+is 105%. It falls back to the resolved frame if the eye reaches or crosses a
+foreground plane. The existing reference-based horizontal offset and clamp
+mean alignment is approximate during movement; it has the same missing-occlusion limitations.
 
 The partition reconstitutes the resolved frame only at zero parallax. It has
 no pixels hidden behind a winning source, so head motion can reveal black holes

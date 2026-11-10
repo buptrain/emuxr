@@ -20,7 +20,13 @@ namespace GbaXr
         /// without changing the resolved surface when the lease cannot safely be
         /// rendered as layered content.
         /// </summary>
-        internal bool Present(GbaNativeBindings.FrameLease lease, bool useUnsafeVisiblePartition)
+        internal bool Present(
+            GbaNativeBindings.FrameLease lease,
+            bool useForcePartition,
+            bool useExtendedForcePartition,
+            bool useForcePartitionParallax,
+            float forcePartitionParallaxCameraLocalX,
+            float forcePartitionParallaxCameraLocalZ)
         {
             if (lease.Layers == IntPtr.Zero || lease.LayerCount == 0)
             {
@@ -33,8 +39,8 @@ namespace GbaXr
             {
                 var l = Marshal.PtrToStructure<GbaNativeBindings.LayerView>(IntPtr.Add(lease.Layers, i * size));
                 float localZ;
-                var hasDepth = useUnsafeVisiblePartition
-                    ? GbaUnsafeVisiblePartitionProfile.TryGetDepth(l.Source, out localZ)
+                var hasDepth = useForcePartition
+                    ? GbaForcePartitionProfile.TryGetDepth(l.Source, useExtendedForcePartition, out localZ)
                     : GbaDepthProfile.TryGetDepth(l.Source, l.Priority, out localZ);
                 if (l.Color.Rgba8 == IntPtr.Zero || l.CoverageMask == IntPtr.Zero || !hasDepth)
                 {
@@ -87,7 +93,7 @@ namespace GbaXr
                     renderer.receiveShadows = false;
                     _planes.Add(l.Source, plane);
                     Debug.Log($"GBA XR: created 2.5D plane source={l.Source}, localZ={localZ:F3}m, " +
-                              $"mode={(useUnsafeVisiblePartition ? "unsafe visible partition" : "verified candidate")}.");
+                              $"mode={(useForcePartition ? (useExtendedForcePartition ? "force partition extended" : "force partition") : "verified candidate")}.");
                 }
 
                 var nativePixels = _nativePixels[l.Source];
@@ -101,7 +107,28 @@ namespace GbaXr
 
                 var candidatePlane = _planes[l.Source];
                 candidatePlane.SetActive(true);
-                candidatePlane.transform.localPosition = new Vector3(0, 0, localZ);
+                var localX = 0f;
+                var projectionScale = 1f;
+                if (useForcePartitionParallax && useExtendedForcePartition &&
+                    !GbaForcePartitionParallaxPolicy.TryGetExtendedProjectionScale(
+                        l.Source, forcePartitionParallaxCameraLocalZ, out projectionScale))
+                {
+                    Debug.LogWarning("GBA XR: extended parallax plane is at or behind the eye; using resolved fallback.");
+                    return false;
+                }
+                if (useForcePartitionParallax &&
+                    !GbaForcePartitionParallaxPolicy.TryGetLocalXOffset(
+                        l.Source,
+                        forcePartitionParallaxCameraLocalZ,
+                        forcePartitionParallaxCameraLocalX,
+                        useExtendedForcePartition,
+                        out localX))
+                {
+                    Debug.LogError("GBA XR: ForcePartitionParallax received an unsupported source or invalid eye distance; using resolved fallback.");
+                    return false;
+                }
+                candidatePlane.transform.localScale = new Vector3(projectionScale, projectionScale, 1f);
+                candidatePlane.transform.localPosition = new Vector3(localX, 0, localZ);
             }
 
             foreach (var entry in _planes)
@@ -112,8 +139,8 @@ namespace GbaXr
             if (!_loggedFirstPresentation)
             {
                 _loggedFirstPresentation = true;
-                Debug.Log(useUnsafeVisiblePartition
-                    ? $"GBA XR: presenting {lease.LayerCount} unsafe visible-partition plane(s) in the 2.5D compositor."
+                Debug.Log(useForcePartition
+                    ? $"GBA XR: presenting {lease.LayerCount} force-partition plane(s) in the 2.5D compositor."
                     : $"GBA XR: presenting {lease.LayerCount} verified candidate plane(s) in the 2.5D compositor.");
             }
 

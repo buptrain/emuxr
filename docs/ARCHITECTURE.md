@@ -74,7 +74,8 @@ The public native contract is [gba_xr_bridge.h](../native/include/gba_xr_bridge.
 2. It looks for the selected fixture below `Application.persistentDataPath/gba-fixtures/`.
 3. If a package-staged fixture is missing from persistent storage, Unity copies it once from `StreamingAssets` using `UnityWebRequest`. This avoids Android scoped-storage and APK-path limitations.
 4. Unity calls `gbaxr_create_unbound(GBAXR_ABI_VERSION)`. The context is deliberately unbound because Unity is not the producer.
-5. Unity starts `gbaxr_mgba_worker_start`, passing the local ROM path and requested frame rate.
+5. Unity starts `gbaxr_mgba_worker_start`, passing the local ROM path and the
+   fixed 60 FPS worker cadence used by the audio path.
 6. The native worker creates the mGBA core, loads the ROM, resets it, then attaches the provenance output to the active software renderer.
 
 Attaching provenance after load/reset is important. Before that point, mGBA can still expose a small dummy renderer object. Treating that object as a software renderer corrupts callback memory and crashes the process.
@@ -101,6 +102,47 @@ runFrame()
 ```
 
 The worker uses a paced loop, not Unity callbacks, to execute emulation. Unity never calls `runFrame()`, and the worker never calls Unity APIs.
+
+## Frontend foundation
+
+`GbaFrontendRuntimeModel` describes the one supported core as `mgba-direct`
+(`mGBA (Direct)`), including the bridge ABI version and the current audio
+snapshot. Its immutable capability manifest distinguishes the implemented
+native worker, resolved renderer, final-pixel PPU provenance, visible-source
+partition, and PCM-pull path from features that are not ready: general
+independent PPU candidate planes, persistent save RAM, and save states. It is
+not a libretro or generic-core abstraction.
+
+`GbaAppPrivateStoragePaths` is a pure layout policy for a future app-private
+ROM library. Given the application root it defines `roms`, `saves`, `states`,
+`system`, and `temp`, while rejecting absolute and parent-traversal user-ROM
+paths. It creates or moves no directories and does not alter the current
+`gba-fixtures` or `gba-user` staging paths. Android document-picker import,
+library metadata, save RAM, and state serialization remain separate follow-up
+services.
+
+`GbaRomImportService` is the first document-picker/library service. On Android
+the private `GbaXrRomImport.androidlib` helper activity launches a one-time
+`ACTION_GET_CONTENT` + `CATEGORY_OPENABLE` picker, copies the selected `.gba`
+stream to Unity's app-specific `persistentDataPath/roms`, enforces the 32 MiB GBA limit, calculates
+SHA-256, and returns metadata only to Unity. It deliberately retains no
+external URI permission and requests no broad storage permission. Unity
+validates the result, records a JSON catalog through a same-directory temporary
+file and replacement policy, and does not start or reload mGBA. A later library
+selection operation must explicitly choose a catalog entry before altering the
+active worker.
+
+The world-space admin console now exposes **Import ROM…** and **Open local ROM
+library** as controller-selectable actions. The library lists metadata and
+retains a selected entry. **Launch selected ROM** is enabled only after an
+explicit Xbox A press on that row; importing never launches content. The driver
+revalidates the selected catalog path under app-private `roms`, fences frame
+acquisition (leases are local to `Update` and released before this input path),
+detaches the Unity audio callback, destroys worker then bridge, starts a new
+direct-mGBA worker, and resets fixture/provenance/presentation state. A start
+failure leaves no native handles and keeps the library console interactive so
+the user can choose another ROM. Xbox B returns from the library to the open
+admin console; only closing that console returns gameplay input.
 
 ### Shutdown
 

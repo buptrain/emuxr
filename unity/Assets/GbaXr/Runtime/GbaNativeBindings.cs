@@ -71,6 +71,34 @@ namespace GbaXr
         internal static extern void gbaxr_mgba_worker_set_keys(IntPtr worker, uint keys);
 
         [DllImport("gba_xr", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern uint gbaxr_mgba_worker_read_audio_pcm_s16(
+            IntPtr worker,
+            IntPtr stereoInterleaved,
+            uint maxFrames);
+
+        [DllImport("gba_xr", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern uint gbaxr_mgba_worker_audio_available_frames(IntPtr worker);
+
+        [DllImport("gba_xr", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern uint gbaxr_mgba_worker_audio_pcm_sample_rate(IntPtr worker);
+
+        [DllImport("gba_xr", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern uint gbaxr_mgba_worker_mgba_audio_sample_rate(IntPtr worker);
+
+        [DllImport("gba_xr", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern ulong gbaxr_mgba_worker_audio_dropped_frames(IntPtr worker);
+
+        [DllImport("gba_xr", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern int gbaxr_mgba_worker_save_state(
+            IntPtr worker,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string utf8StatePath);
+
+        [DllImport("gba_xr", CallingConvention = CallingConvention.Cdecl)]
+        internal static extern int gbaxr_mgba_worker_load_state(
+            IntPtr worker,
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string utf8StatePath);
+
+        [DllImport("gba_xr", CallingConvention = CallingConvention.Cdecl)]
         internal static extern void gbaxr_mgba_worker_destroy(IntPtr worker);
 
         [DllImport("gba_xr", CallingConvention = CallingConvention.Cdecl)]

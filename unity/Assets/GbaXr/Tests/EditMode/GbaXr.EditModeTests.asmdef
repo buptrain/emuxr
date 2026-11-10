@@ -2,7 +2,8 @@
   "name": "GbaXr.EditModeTests",
   "rootNamespace": "GbaXr.Tests",
   "references": [
-    "GbaXr.Runtime"
+    "GbaXr.Runtime",
+    "Unity.XR.ARSubsystems"
   ],
   "includePlatforms": [
     "Editor"

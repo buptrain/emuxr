@@ -1,0 +1,17 @@
+apply plugin: 'com.android.library'
+
+android {
+    namespace 'com.tiger.gbaixr'
+    // Android library source plug-ins do not inherit Unity's compile SDK.
+    // Keep this aligned with Unity's generated Android target (currently 36).
+    compileSdk 36
+    buildToolsVersion "36.0.0"
+
+    defaultConfig {
+        minSdk 25
+    }
+}
+
+dependencies {
+    implementation fileTree(dir: 'libs', include: ['*.jar'])
+}

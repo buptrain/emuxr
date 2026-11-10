@@ -4,6 +4,8 @@
     "com.unity.inputsystem": "1.19.0",
     "com.unity.render-pipelines.universal": "17.3.0",
     "com.unity.test-framework": "1.1.33",
+    "com.unity.ugui": "2.0.0",
+    "com.unity.xr.arfoundation": "6.4.0",
     "com.unity.xr.androidxr-openxr": "1.1.0",
     "com.unity.xr.compositionlayers": "2.3.0",
     "com.unity.xr.interaction.toolkit": "3.3.2",

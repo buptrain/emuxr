@@ -2,7 +2,12 @@
   "name": "GbaXr.Runtime",
   "rootNamespace": "GbaXr",
   "references": [
-    "Unity.InputSystem"
+    "Unity.InputSystem",
+    "Unity.ugui",
+    "Unity.XR.ARFoundation",
+    "Unity.XR.ARSubsystems",
+    "Unity.XR.CoreUtils",
+    "Unity.XR.OpenXR"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

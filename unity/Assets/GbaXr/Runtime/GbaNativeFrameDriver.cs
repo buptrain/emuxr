@@ -20,11 +20,15 @@ namespace GbaXr
     {
         public enum PresentationMode
         {
-            Auto,
-            ForceResolved,
-            ForceProfile,
-            ForceUnprofiledCandidates,
-            UnsafeVisiblePartition
+            Auto = 0,
+            Original = 1,
+            // Value 2 was ForceProfile. Preserve the gap so existing scenes
+            // with ForceUnprofiledCandidates and ForcePartition retain meaning.
+            ForceUnprofiledCandidates = 3,
+            ForcePartition = 4,
+            // Value 5 was ForcePartitionExtended; retired scenes fall back to Auto.
+            ForcePartitionParallax = 6,
+            ForcePartitionExtendedParallax = 7
         }
         private const string SyntheticFixturePath = "gba-fixtures/frame_sequence.gba";
         private const string Bg0PriorityFixturePath = "gba-fixtures/bg0_priority.gba";
@@ -50,11 +54,20 @@ namespace GbaXr
         private const uint AffineBg2ExpectedHash = 0x87A1ADC5u;
         private const uint ObjAlphaExpectedHash = 0x28C36DC5u;
         private const int HashVerificationFrame = 5;
+        // ~85 ms at 48 kHz: enough margin for mGBA's ~31 ms postAudioBuffer
+        // cadence, while remaining below the 8,192-frame native ring capacity.
+        private const uint AudioPrimeFrames = 4096U;
+        private const uint FixedEmulationFramesPerSecond = 60U;
+        private const float AudioLivenessIntervalSeconds = 2f;
+        private const int AdminConsoleRowCount = 8;
+        private const int AdminLibraryRow = 3;
+        private const int AdminSaveStateRow = 4;
+        private const int AdminLoadStateRow = 5;
+        private const int AdminApplyRow = 6;
+        private const int AdminCloseRow = 7;
 
         [Tooltip("Relative path below Application.persistentDataPath. Use only a user-provided homebrew/test fixture.")]
         [SerializeField] private string romRelativePath = SyntheticFixturePath;
-
-        [SerializeField, Range(1, 120)] private int emulatedFramesPerSecond = 60;
 
         private readonly byte[] _rgbaFrame = new byte[GbaTestFrameSurface.Width * GbaTestFrameSurface.Height * 4];
         private readonly byte[] _partitionComposite = new byte[GbaTestFrameSurface.Width * GbaTestFrameSurface.Height * 4];
@@ -69,30 +82,108 @@ namespace GbaXr
         private bool _verifiedFixtureHash;
         private bool _verifiedProvenanceContract;
         private bool _verifiedVisiblePartition;
-        private bool _unsafeVisiblePartitionVerified;
+        private bool _forcePartitionVerified;
         private bool _verifiedIndependentBg0;
         private bool _verifiedIndependentBgTie;
         private bool _verifiedIndependentObj;
         [SerializeField] private bool showDeveloperOverlay = true;
         [SerializeField] private PresentationMode presentationMode = PresentationMode.Auto;
         private bool _profileActive;
-        private bool _usingUnsafeVisiblePartition;
+        private bool _usingForcePartition;
+        private bool _usingExtendedForcePartition;
+        private bool _usingForcePartitionParallax;
+        private bool _hasForcePartitionParallaxReference;
+        private float _forcePartitionParallaxReferenceCameraLocalX;
+        private float _filteredForcePartitionParallaxCameraLocalX;
+        private Vector3 _forcePartitionParallaxReferenceScreenPosition;
+        private Quaternion _forcePartitionParallaxReferenceScreenRotation;
         private bool _loggedUnprofiledRomFallback;
         private bool _loggedForcedUnprofiledCandidates;
-        private bool _loggedUnsafeVisiblePartition;
+        private bool _loggedForcePartition;
         private PresentationMode _lastNonResolvedPresentationMode;
+        private GbaAdminConsoleModel _adminConsole;
+        private GbaAdminConsoleView _adminConsoleView;
+        private int _adminConsoleSelectedRow;
+        private GbaRomLibraryConsoleModel _romLibraryConsole;
+        private GbaScreenRoot _screenRoot;
+        private GbaFrontendRuntimeModel _frontendRuntime;
+        private GbaRomImportService _romImportService;
+        private GbaAudioOutput _audioOutput;
+        private GbaImportedRomMetadata _activeLibraryRom;
+        private GbaRomLaunchState _romLaunchState = GbaRomLaunchState.Idle;
+        private string _romLaunchStatus = "No library ROM launch requested.";
+        private string _stateStatus = "Quick slot 0 is ready.";
+        private ulong _lastAudioUnderflowFrames;
+        private ulong _lastAudioStreamingCallbacks;
+        private ulong _lastAudioPcmFramesRequested;
+        private ulong _lastAudioPcmFramesPulled;
+        private ulong _lastAudioPcmEmptyReads;
+        private ulong _lastAudioNonSilentPcmFramesPulled;
+        private float _nextAudioUnderflowLogTime;
+        private float _nextAudioLivenessCheckTime;
+        private GbaAudioFaultKind _lastAudioFaultKind;
+        private bool _audioOutputPrimed;
+        private readonly GbaRollingFrameRateMeter _leaseFrameRate = new();
+
+        /// <summary>Direct-mGBA frontend capabilities and transient audio state.</summary>
+        public GbaFrontendRuntimeModel Frontend => _frontendRuntime;
+
+        /// <summary>App-private ROM-library import seam; it never changes the active worker.</summary>
+        public GbaRomImportService RomImport => _romImportService;
+
+        /// <summary>Current explicit ROM-switch state for the local library view.</summary>
+        public GbaRomLaunchState RomLaunchState => _romLaunchState;
 
         private void Awake()
         {
+            presentationMode = NormalizePresentationMode(presentationMode);
+            _frontendRuntime = GbaFrontendRuntimeModel.CreateDirectMgba();
+            _screenRoot = CreateScreenRoot();
             _surface = GetComponent<GbaTestFrameSurface>();
             _layeredSurface = GetComponent<GbaLayeredSurface>() ?? gameObject.AddComponent<GbaLayeredSurface>();
-            _lastNonResolvedPresentationMode = presentationMode == PresentationMode.ForceResolved
+            _romImportService = GetComponent<GbaRomImportService>() ?? gameObject.AddComponent<GbaRomImportService>();
+            _romImportService.ImportCompleted += OnRomPickerCompleted;
+            _audioOutput = GetComponent<GbaAudioOutput>() ?? gameObject.AddComponent<GbaAudioOutput>();
+            _lastNonResolvedPresentationMode = presentationMode == PresentationMode.Original
                 ? PresentationMode.Auto
                 : presentationMode;
+            _adminConsole = new GbaAdminConsoleModel(new GbaAdminConsoleSettings
+            {
+                PresentationMode = presentationMode,
+                PlacementMode = _screenRoot.PlacementMode
+            });
+            _romLibraryConsole = new GbaRomLibraryConsoleModel();
+            var consoleObject = new GameObject("GBA XR Admin Console", typeof(RectTransform));
+            consoleObject.transform.SetParent(transform, false);
+            _adminConsoleView = consoleObject.AddComponent<GbaAdminConsoleView>();
+            _adminConsoleView.Initialize(ApplyAdminConsole, CloseAdminConsole);
+            Debug.Log("GBA XR: press Xbox R3 to open the admin console. Plane placement is hand-only.");
+        }
+
+        private GbaScreenRoot CreateScreenRoot()
+        {
+            if (transform.parent != null && transform.parent.TryGetComponent<GbaScreenRoot>(out var existingRoot))
+            {
+                return existingRoot;
+            }
+
+            var screenRootObject = new GameObject("GBA Screen Root");
+            var screenRootTransform = screenRootObject.transform;
+            screenRootTransform.SetParent(transform.parent, true);
+            screenRootTransform.SetPositionAndRotation(transform.position, transform.rotation);
+            screenRootTransform.localScale = transform.lossyScale;
+            transform.SetParent(screenRootTransform, true);
+            return screenRootObject.AddComponent<GbaScreenRoot>();
         }
 
         private void OnEnable()
         {
+            if (ShouldOpenConsoleAtStartup(romRelativePath))
+            {
+                OpenAdminConsole(GetWorkerState());
+                return;
+            }
+
             if (Application.platform != RuntimePlatform.Android)
             {
                 return;
@@ -100,6 +191,8 @@ namespace GbaXr
 
             _initializationRoutine = StartCoroutine(InitializeFromFixture());
         }
+
+        internal static bool ShouldOpenConsoleAtStartup(string path) => string.IsNullOrWhiteSpace(path);
 
         private IEnumerator InitializeFromFixture()
         {
@@ -121,36 +214,75 @@ namespace GbaXr
                 yield break;
             }
 
+            if (TryStartNativeSession(romPath, out var error))
+            {
+                _activeLibraryRom = null;
+                _romLaunchState = GbaRomLaunchState.Running;
+                _romLaunchStatus = $"Running staged ROM: {romRelativePath}";
+            }
+            else
+            {
+                _romLaunchState = GbaRomLaunchState.FailedStopped;
+                _romLaunchStatus = error;
+                Debug.LogError($"GBA XR: could not start staged ROM. {error}");
+            }
+            _initializationRoutine = null;
+        }
+
+        /// <summary>
+        /// Starts a direct mGBA worker from an already-local app-private path.
+        /// On every failure it destroys partial native handles and leaves the
+        /// driver stopped, so a console user can safely choose another ROM.
+        /// </summary>
+        private bool TryStartNativeSession(string romPath, out string error)
+        {
+            error = null;
+            if (string.IsNullOrWhiteSpace(romPath) || !File.Exists(romPath))
+            {
+                error = "The selected ROM file is not available in app-private storage.";
+                return false;
+            }
+
             try
             {
                 _bridge = GbaNativeBindings.gbaxr_create_unbound(GbaNativeBindings.AbiVersion);
                 if (_bridge == IntPtr.Zero)
                 {
-                    Debug.LogError("GBA XR: could not create the native frame bridge.");
-                    yield break;
+                    error = "Could not create the native frame bridge.";
+                    return false;
                 }
 
                 _worker = GbaNativeBindings.gbaxr_mgba_worker_start(
                     _bridge,
                     romPath,
-                    (uint)emulatedFramesPerSecond);
+                    FixedEmulationFramesPerSecond);
                 if (_worker == IntPtr.Zero)
                 {
-                    Debug.LogError("GBA XR: could not start the native mGBA worker.");
-                    DisposeNative();
-                    yield break;
+                    error = "Could not start the native mGBA worker for the selected ROM.";
+                    return false;
                 }
 
+                ResetSessionPresentationState();
                 _started = true;
+                _audioOutputPrimed = false;
+                _frontendRuntime.UpdateAudioStatus(new GbaFrontendAudioStatus(
+                    GbaFrontendAudioState.Priming,
+                    0U,
+                    0U));
+                _leaseFrameRate.Reset(Time.unscaledTime);
+                return true;
             }
-            catch (DllNotFoundException exception)
+            catch (Exception exception)
             {
-                Debug.LogError($"GBA XR: native Android plug-in is unavailable. {exception.Message}");
-                DisposeNative();
+                error = $"Native plug-in start failed: {exception.Message}";
+                return false;
             }
             finally
             {
-                _initializationRoutine = null;
+                if (!_started)
+                {
+                    DisposeNative();
+                }
             }
         }
 
@@ -175,24 +307,66 @@ namespace GbaXr
         {
             if (!_started)
             {
+                // A failed explicit library launch leaves the console open so
+                // the user can inspect the error and select another ROM.
+                if (_adminConsole != null && _adminConsole.IsOpen)
+                {
+                    HandleAdminConsoleInput();
+                }
+                else if (_adminConsole != null && WasAdminConsoleOpenPressed())
+                {
+                    OpenAdminConsole(GetWorkerState());
+                }
                 return;
             }
 
-            var workerState = GbaNativeBindings.gbaxr_mgba_worker_state(_worker);
+            var workerState = GetWorkerState();
             if (workerState < 0)
             {
                 Debug.LogError($"GBA XR: native mGBA worker stopped with state {workerState}.");
-                _started = false;
+                _frontendRuntime.UpdateAudioStatus(new GbaFrontendAudioStatus(
+                    GbaFrontendAudioState.Unavailable,
+                    0U,
+                    0U));
+                DisposeNative();
+                _activeLibraryRom = null;
+                _romLaunchState = GbaRomLaunchState.FailedStopped;
+                _romLaunchStatus = $"The active native worker stopped with state {workerState}.";
                 return;
             }
-            HandlePresentationModeToggle();
-            GbaNativeBindings.gbaxr_mgba_worker_set_keys(_worker, ReadGamepadKeys());
+            UpdateAudioDiagnostics();
+            if (_adminConsole.IsOpen)
+            {
+                GbaNativeBindings.gbaxr_mgba_worker_set_keys(_worker, 0U);
+                HandleAdminConsoleInput();
+            }
+            else
+            {
+                if (WasAdminConsoleOpenPressed())
+                {
+                    OpenAdminConsole(workerState);
+                }
+                if (_adminConsole.IsOpen)
+                {
+                    GbaNativeBindings.gbaxr_mgba_worker_set_keys(_worker, 0U);
+                }
+                else
+                {
+                    GbaNativeBindings.gbaxr_mgba_worker_set_keys(_worker, ReadGamepadKeys());
+                }
+            }
+
+            if (!_started || _bridge == IntPtr.Zero)
+            {
+                return;
+            }
 
             if (GbaNativeBindings.gbaxr_acquire_latest_frame(_bridge, out var lease) != GbaNativeBindings.Ok)
             {
                 return;
             }
 
+            var completedLease = false;
             try
             {
                 if (lease.ResolvedRgba.Width != GbaTestFrameSurface.Width ||
@@ -207,8 +381,21 @@ namespace GbaXr
                 Marshal.Copy(lease.ResolvedRgba.Rgba8, _rgbaFrame, 0, _rgbaFrame.Length);
                 UpdatePresentationProfile(lease);
                 _surface.UploadRgba32(_rgbaFrame);
+                var forcePartitionParallaxCameraLocalX = 0f;
+                var forcePartitionParallaxCameraLocalZ = 0f;
+                if (_usingForcePartitionParallax)
+                {
+                    forcePartitionParallaxCameraLocalX = GetForcePartitionParallaxCameraLocalX(
+                        out forcePartitionParallaxCameraLocalZ);
+                }
                 var presentedLayeredContent = _profileActive && _layeredSurface != null &&
-                                              _layeredSurface.Present(lease, _usingUnsafeVisiblePartition);
+                                              _layeredSurface.Present(
+                                                  lease,
+                                                  _usingForcePartition,
+                                                  _usingExtendedForcePartition,
+                                                  _usingForcePartitionParallax,
+                                                  forcePartitionParallaxCameraLocalX,
+                                                  forcePartitionParallaxCameraLocalZ);
                 var resolvedRenderer = _surface.GetComponent<Renderer>();
                 if (resolvedRenderer != null)
                 {
@@ -232,10 +419,14 @@ namespace GbaXr
                 VerifyIndependentBgTieCandidates(lease);
                 VerifyIndependentObjCandidates(lease);
                 VerifyVisibleSourcePartition(lease);
+                completedLease = true;
             }
             finally
             {
-                GbaNativeBindings.gbaxr_release_frame(_bridge, ref lease);
+                if (GbaNativeBindings.gbaxr_release_frame(_bridge, ref lease) == GbaNativeBindings.Ok && completedLease)
+                {
+                    _leaseFrameRate.RecordCompletedLease(Time.unscaledTime);
+                }
             }
         }
 
@@ -869,7 +1060,7 @@ namespace GbaXr
             Debug.Log(
                 $"GBA XR: visible-source partition verified: {lease.LayerCount} disjoint lease plane(s) " +
                 "recompose the resolved frame at zero parallax.");
-            _unsafeVisiblePartitionVerified = true;
+            _forcePartitionVerified = true;
         }
 
         private void VerifyIndependentBg0Candidate(GbaNativeBindings.FrameLease lease)
@@ -989,15 +1180,20 @@ namespace GbaXr
 
         private void UpdatePresentationProfile(GbaNativeBindings.FrameLease lease)
         {
-            var unsafeVisiblePartitionRequested = presentationMode == PresentationMode.UnsafeVisiblePartition;
-            var unsafeVisiblePartitionAvailable = unsafeVisiblePartitionRequested && _unsafeVisiblePartitionVerified &&
-                                                 lease.LayerSemantics == 1 &&
-                                                 HasValidUnsafeVisiblePartition(lease);
-            if (unsafeVisiblePartitionRequested && !_loggedUnsafeVisiblePartition)
+            var forcePartitionRequested = presentationMode is PresentationMode.ForcePartition or
+                PresentationMode.ForcePartitionParallax or
+                PresentationMode.ForcePartitionExtendedParallax;
+            var extendedForcePartitionRequested = presentationMode == PresentationMode.ForcePartitionExtendedParallax;
+            var forcePartitionParallaxRequested = presentationMode is PresentationMode.ForcePartitionParallax or
+                PresentationMode.ForcePartitionExtendedParallax;
+            var forcePartitionAvailable = forcePartitionRequested && _forcePartitionVerified &&
+                                          lease.LayerSemantics == 1 &&
+                                          HasValidForcePartition(lease);
+            if (forcePartitionRequested && !_loggedForcePartition)
             {
-                _loggedUnsafeVisiblePartition = true;
+                _loggedForcePartition = true;
                 Debug.LogWarning(
-                    "GBA XR: UNSAFE visible-partition mode maps final source pixels to depth bands. " +
+                    $"GBA XR: {presentationMode} maps final source pixels to depth bands. " +
                     "It can reveal missing occluded pixels, break blending, or show holes during head motion.");
             }
 
@@ -1012,7 +1208,7 @@ namespace GbaXr
                     "GBA XR: developer force mode bypasses the ROM profile allow-list. " +
                     "Only native independent-candidate frames may enter 2.5D; all other frames remain resolved.");
             }
-            else if (!unsafeVisiblePartitionRequested && !profileAllowedByRom && !_loggedUnprofiledRomFallback)
+            else if (!forcePartitionRequested && !profileAllowedByRom && !_loggedUnprofiledRomFallback)
             {
                 _loggedUnprofiledRomFallback = true;
                 Debug.Log("GBA XR: no approved 2.5D profile for this ROM; keeping the resolved-frame presentation.");
@@ -1020,26 +1216,105 @@ namespace GbaXr
 
             var verifiedCandidates = profileAllowedByRom && lease.LayerSemantics == 2 && lease.Layers != IntPtr.Zero &&
                                      lease.LayerCount > 0 && HasSupportedDepthProfile(lease);
-            var nextActive = unsafeVisiblePartitionRequested
-                ? unsafeVisiblePartitionAvailable
-                : presentationMode != PresentationMode.ForceResolved && verifiedCandidates;
-            if (presentationMode == PresentationMode.ForceProfile && !verifiedCandidates)
+            var nextActive = forcePartitionRequested
+                ? forcePartitionAvailable
+                : presentationMode != PresentationMode.Original && verifiedCandidates;
+            var nextUsesForcePartition = nextActive && forcePartitionAvailable;
+            var nextUsesExtendedForcePartition = nextUsesForcePartition && extendedForcePartitionRequested;
+            var nextUsesForcePartitionParallax = nextUsesForcePartition && forcePartitionParallaxRequested;
+            if (nextActive == _profileActive &&
+                nextUsesForcePartition == _usingForcePartition &&
+                nextUsesExtendedForcePartition == _usingExtendedForcePartition &&
+                nextUsesForcePartitionParallax == _usingForcePartitionParallax) return;
+            if (nextUsesForcePartitionParallax && !_usingForcePartitionParallax)
             {
-                nextActive = false;
+                ResetForcePartitionParallaxReference();
             }
-            var nextUsesUnsafeVisiblePartition = nextActive && unsafeVisiblePartitionAvailable;
-            if (nextActive == _profileActive && nextUsesUnsafeVisiblePartition == _usingUnsafeVisiblePartition) return;
+            else if (!nextUsesForcePartitionParallax)
+            {
+                ResetForcePartitionParallaxReference();
+            }
             _profileActive = nextActive;
-            _usingUnsafeVisiblePartition = nextUsesUnsafeVisiblePartition;
+            _usingForcePartition = nextUsesForcePartition;
+            _usingExtendedForcePartition = nextUsesExtendedForcePartition;
+            _usingForcePartitionParallax = nextUsesForcePartitionParallax;
             if (!_profileActive && _layeredSurface != null) _layeredSurface.Hide();
             Debug.Log(_profileActive
-                ? _usingUnsafeVisiblePartition
-                    ? $"GBA XR: unsafe visible-partition profile armed for {lease.LayerCount} source plane(s)."
+                ? _usingForcePartition
+                    ? _usingForcePartitionParallax
+                        ? $"GBA XR: {presentationMode} armed for {lease.LayerCount} source plane(s). This unsafe experiment adds viewpoint parallax."
+                        : $"GBA XR: {presentationMode} armed for {lease.LayerCount} source plane(s)."
                     : $"GBA XR: 2.5D profile armed for {lease.LayerCount} verified candidate plane(s)."
                 : "GBA XR: resolved-frame fallback selected (profile unavailable or disabled).");
         }
 
-        private static bool HasValidUnsafeVisiblePartition(GbaNativeBindings.FrameLease lease)
+        private float GetForcePartitionParallaxCameraLocalX(out float cameraLocalZToBg0)
+        {
+            cameraLocalZToBg0 = 0f;
+            var camera = Camera.main;
+            if (camera == null)
+            {
+                return 0f;
+            }
+
+            var cameraLocalPosition = transform.InverseTransformPoint(camera.transform.position);
+            var currentCameraLocalX = cameraLocalPosition.x;
+            cameraLocalZToBg0 = cameraLocalPosition.z;
+            if (!_hasForcePartitionParallaxReference)
+            {
+                _forcePartitionParallaxReferenceCameraLocalX = currentCameraLocalX;
+                _filteredForcePartitionParallaxCameraLocalX = 0f;
+                CaptureForcePartitionParallaxScreenPose();
+            }
+            else if (HasForcePartitionParallaxScreenPoseChanged())
+            {
+                // Do not snap to zero when an anchor or free drag materially
+                // changes the screen pose. Rebase around the current filtered
+                // signal so the effective parallax remains continuous.
+                _forcePartitionParallaxReferenceCameraLocalX =
+                    GbaForcePartitionParallaxFilterPolicy.RebaseReferenceCameraLocalX(
+                        currentCameraLocalX,
+                        _filteredForcePartitionParallaxCameraLocalX);
+                CaptureForcePartitionParallaxScreenPose();
+            }
+
+            var rawCameraLocalX = currentCameraLocalX - _forcePartitionParallaxReferenceCameraLocalX;
+            _filteredForcePartitionParallaxCameraLocalX =
+                GbaForcePartitionParallaxFilterPolicy.AdvanceFilteredCameraLocalX(
+                    _filteredForcePartitionParallaxCameraLocalX,
+                    rawCameraLocalX,
+                    Time.unscaledDeltaTime);
+            return GbaForcePartitionParallaxFilterPolicy.ApplyContinuousDeadZone(
+                _filteredForcePartitionParallaxCameraLocalX);
+        }
+
+        private bool HasForcePartitionParallaxScreenPoseChanged()
+        {
+            // These thresholds intentionally exceed ordinary anchor-tracking
+            // jitter; a normal tracked-plane update must not rebase parallax.
+            const float positionThresholdMetres = 0.05f;
+            const float rotationThresholdDegrees = 5f;
+            return Vector3.Distance(_screenRoot.transform.position, _forcePartitionParallaxReferenceScreenPosition) > positionThresholdMetres ||
+                   Quaternion.Angle(_screenRoot.transform.rotation, _forcePartitionParallaxReferenceScreenRotation) > rotationThresholdDegrees;
+        }
+
+        private void CaptureForcePartitionParallaxScreenPose()
+        {
+            _forcePartitionParallaxReferenceScreenPosition = _screenRoot.transform.position;
+            _forcePartitionParallaxReferenceScreenRotation = _screenRoot.transform.rotation;
+            _hasForcePartitionParallaxReference = true;
+        }
+
+        private void ResetForcePartitionParallaxReference()
+        {
+            _hasForcePartitionParallaxReference = false;
+            _forcePartitionParallaxReferenceCameraLocalX = 0f;
+            _filteredForcePartitionParallaxCameraLocalX = 0f;
+            _forcePartitionParallaxReferenceScreenPosition = default;
+            _forcePartitionParallaxReferenceScreenRotation = default;
+        }
+
+        private static bool HasValidForcePartition(GbaNativeBindings.FrameLease lease)
         {
             if (lease.Layers == IntPtr.Zero || lease.LayerCount == 0 || lease.LayerCount > 6)
             {
@@ -1056,7 +1331,7 @@ namespace GbaXr
                     layer.Color.Height != GbaTestFrameSurface.Height ||
                     layer.Color.RowStrideBytes != GbaTestFrameSurface.Width * 4 ||
                     !sources.Add(layer.Source) ||
-                    !GbaUnsafeVisiblePartitionProfile.TryGetDepth(layer.Source, out _))
+                    !GbaForcePartitionProfile.TryGetDepth(layer.Source, false, out _))
                 {
                     return false;
                 }
@@ -1086,6 +1361,427 @@ namespace GbaXr
             return GbaDepthProfile.SupportsSourceSet(sources);
         }
 
+        private void OpenAdminConsole(int workerState)
+        {
+            _adminConsoleSelectedRow = 0;
+            _adminConsole.Open();
+            _adminConsoleView.Show(
+                _adminConsole.Draft,
+                workerState,
+                _leaseFrameRate.FramesPerSecond,
+                _adminConsoleSelectedRow,
+                _romImportService.Entries?.Count ?? 0,
+                DescribeRomImportStatus(),
+                _stateStatus);
+            Debug.Log("GBA XR: admin console opened; gameplay input is suspended.");
+        }
+
+        private static bool WasAdminConsoleOpenPressed()
+        {
+            // R3 is not forwarded to GBA key input and opens the console in
+            // either placement mode. Plane placement remains hand-only.
+            return Gamepad.current != null && Gamepad.current.rightStickButton.wasPressedThisFrame;
+        }
+
+        private void CloseAdminConsole()
+        {
+            if (_adminConsole == null || !_adminConsole.IsOpen)
+            {
+                return;
+            }
+            _romLibraryConsole?.Close();
+            _adminConsole.Close();
+            _adminConsoleView.Hide();
+            Debug.Log("GBA XR: admin console closed; gameplay input restored.");
+        }
+
+        private void HandleAdminConsoleInput()
+        {
+            var gamepad = Gamepad.current;
+            if (gamepad == null)
+            {
+                return;
+            }
+
+            if (gamepad.buttonEast.wasPressedThisFrame)
+            {
+                if (_romLibraryConsole.IsOpen)
+                {
+                    CloseRomLibrary();
+                    return;
+                }
+                CloseAdminConsole();
+                return;
+            }
+            if (_romLibraryConsole.IsOpen)
+            {
+                HandleRomLibraryInput(gamepad);
+                return;
+            }
+            if (gamepad.dpad.up.wasPressedThisFrame)
+            {
+                _adminConsoleSelectedRow = (_adminConsoleSelectedRow + AdminConsoleRowCount - 1) % AdminConsoleRowCount;
+            }
+            if (gamepad.dpad.down.wasPressedThisFrame)
+            {
+                _adminConsoleSelectedRow = (_adminConsoleSelectedRow + 1) % AdminConsoleRowCount;
+            }
+            if (gamepad.dpad.left.wasPressedThisFrame)
+            {
+                AdjustAdminConsoleSelection(-1);
+            }
+            if (gamepad.dpad.right.wasPressedThisFrame)
+            {
+                AdjustAdminConsoleSelection(1);
+            }
+            if (gamepad.buttonSouth.wasPressedThisFrame)
+            {
+                if (_adminConsoleSelectedRow == AdminLibraryRow)
+                {
+                    RequestRomImport();
+                    return;
+                }
+                else if (_adminConsoleSelectedRow == AdminApplyRow)
+                {
+                    ApplyAdminConsole();
+                }
+                else if (_adminConsoleSelectedRow == AdminSaveStateRow)
+                {
+                    _adminConsole.Request(GbaAdminOperation.SaveState);
+                    ApplyAdminConsole();
+                }
+                else if (_adminConsoleSelectedRow == AdminLoadStateRow)
+                {
+                    _adminConsole.Request(GbaAdminOperation.LoadState);
+                    ApplyAdminConsole();
+                }
+                else if (_adminConsoleSelectedRow == AdminCloseRow)
+                {
+                    CloseAdminConsole();
+                    return;
+                }
+            }
+
+            if (_adminConsole.IsOpen)
+            {
+                RefreshAdminConsoleView();
+            }
+        }
+
+        private void AdjustAdminConsoleSelection(int direction)
+        {
+            var draft = _adminConsole.Draft;
+            if (_adminConsoleSelectedRow == 1)
+            {
+                var modes = (PresentationMode[])Enum.GetValues(typeof(PresentationMode));
+                var currentIndex = Array.IndexOf(modes, NormalizePresentationMode(draft.PresentationMode));
+                var nextIndex = (currentIndex + direction + modes.Length) % modes.Length;
+                _adminConsole.SetDraftPresentationMode(modes[nextIndex]);
+            }
+            else if (_adminConsoleSelectedRow == 2)
+            {
+                var modes = (GbaScreenPlacementMode[])Enum.GetValues(typeof(GbaScreenPlacementMode));
+                var nextIndex = ((int)draft.PlacementMode + direction + modes.Length) % modes.Length;
+                _adminConsole.SetDraftPlacementMode(modes[nextIndex]);
+            }
+        }
+
+        private void OpenRomLibrary()
+        {
+            _romLibraryConsole.Open(_romImportService?.Entries);
+            _adminConsoleView.ShowLibrary(
+                _romLibraryConsole,
+                GetWorkerState(),
+                DescribeRomImportStatus(),
+                DescribeCurrentRom(),
+                _romLaunchStatus);
+            Debug.Log("GBA XR: local ROM library opened; launch requires explicit A on a selected entry.");
+        }
+
+        private void CloseRomLibrary()
+        {
+            _romLibraryConsole.Close();
+            if (_adminConsole.IsOpen)
+            {
+                RefreshAdminConsoleView();
+            }
+        }
+
+        private void HandleRomLibraryInput(Gamepad gamepad)
+        {
+            _romLibraryConsole.UpdateEntries(_romImportService?.Entries);
+            if (gamepad.dpad.up.wasPressedThisFrame)
+            {
+                _romLibraryConsole.MoveSelection(-1);
+            }
+            if (gamepad.dpad.down.wasPressedThisFrame)
+            {
+                _romLibraryConsole.MoveSelection(1);
+            }
+            if (gamepad.buttonSouth.wasPressedThisFrame)
+            {
+                switch (_romLibraryConsole.ActivateSelection())
+                {
+                    case GbaRomLibraryConsoleAction.Import:
+                        RequestRomImport();
+                        break;
+                    case GbaRomLibraryConsoleAction.LaunchSelected:
+                        if (RequestLaunchSelectedLibraryRom())
+                        {
+                            CloseAdminConsole();
+                            return;
+                        }
+                        break;
+                    case GbaRomLibraryConsoleAction.LaunchUnavailable:
+                        Debug.LogWarning(
+                            "GBA XR: select a local ROM before requesting an explicit launch.");
+                        break;
+                    case GbaRomLibraryConsoleAction.Back:
+                        CloseRomLibrary();
+                        return;
+                }
+            }
+            RefreshAdminConsoleView();
+        }
+
+        private void RefreshAdminConsoleView()
+        {
+            var workerState = GetWorkerState();
+            var importStatus = DescribeRomImportStatus();
+            if (_romLibraryConsole.IsOpen)
+            {
+                _romLibraryConsole.UpdateEntries(_romImportService?.Entries);
+                _adminConsoleView.RefreshLibrary(
+                    _romLibraryConsole,
+                    workerState,
+                    importStatus,
+                    DescribeCurrentRom(),
+                    _romLaunchStatus);
+                return;
+            }
+
+            _adminConsoleView.Refresh(
+                _adminConsole.Draft,
+                workerState,
+                _leaseFrameRate.FramesPerSecond,
+                _adminConsoleSelectedRow,
+                _romImportService.Entries?.Count ?? 0,
+                importStatus,
+                _stateStatus);
+        }
+
+        private string DescribeRomImportStatus()
+        {
+            var outcome = _romImportService?.LastOutcome;
+            if (outcome?.Kind == GbaRomImportOutcomeKind.Success &&
+                _romLaunchState == GbaRomLaunchState.FailedStopped)
+            {
+                return _romLaunchStatus;
+            }
+            return GbaRomImportPresentationPolicy.Describe(
+                _romImportService != null && _romImportService.ImportInFlight,
+                outcome?.Kind,
+                outcome?.Message);
+        }
+
+        private string DescribeCurrentRom()
+        {
+            if (_activeLibraryRom != null)
+            {
+                return _activeLibraryRom.DisplayName;
+            }
+            return _started ? romRelativePath : "No active ROM (worker stopped)";
+        }
+
+        private bool RequestLaunchSelectedLibraryRom(GbaImportedRomMetadata selected = null)
+        {
+            if (_romLaunchState is GbaRomLaunchState.StoppingCurrentWorker or GbaRomLaunchState.StartingSelectedWorker)
+            {
+                return false;
+            }
+
+            _romLaunchState = GbaRomLaunchState.ValidatingSelection;
+            var paths = GbaAppPrivateStoragePaths.Create(Application.persistentDataPath);
+            if (!GbaRomLaunchPolicy.TryCreateRequest(
+                    paths,
+                    selected ?? _romLibraryConsole.SelectedEntry,
+                    File.Exists,
+                    out var request,
+                    out var validationError))
+            {
+                _romLaunchState = _started ? GbaRomLaunchState.Running : GbaRomLaunchState.FailedStopped;
+                _romLaunchStatus = validationError;
+                Debug.LogWarning($"GBA XR: ROM launch rejected. {validationError}");
+                return false;
+            }
+
+            // Update's frame lease is local and released in its finally block.
+            // This input branch runs before a new lease is acquired, so fencing
+            // _started first guarantees no bridge frame is accessed while the
+            // audio callback is detached and the worker/bridge are destroyed.
+            if (_initializationRoutine != null)
+            {
+                StopCoroutine(_initializationRoutine);
+                _initializationRoutine = null;
+            }
+            _romLaunchState = GbaRomLaunchState.StoppingCurrentWorker;
+            _started = false;
+            DisposeNative();
+
+            _romLaunchState = GbaRomLaunchState.StartingSelectedWorker;
+            if (!TryStartNativeSession(request.AbsolutePath, out var startError))
+            {
+                _activeLibraryRom = null;
+                _romLaunchState = GbaRomLaunchState.FailedStopped;
+                _romLaunchStatus = $"Launch failed; worker is stopped. Choose another ROM. {startError}";
+                Debug.LogError($"GBA XR: {_romLaunchStatus}");
+                return false;
+            }
+
+            _activeLibraryRom = request.Metadata;
+            romRelativePath = "roms/" + request.Metadata.RelativePath;
+            _romLaunchState = GbaRomLaunchState.Running;
+            _romLaunchStatus = $"Running {request.Metadata.DisplayName}.";
+            Debug.Log($"GBA XR: launched selected app-private ROM {request.Metadata.DisplayName}.");
+            return true;
+        }
+
+        private void ApplyAdminConsole()
+        {
+            var transaction = _adminConsole.Apply();
+            var settings = transaction.Settings;
+            presentationMode = NormalizePresentationMode(settings.PresentationMode);
+            _screenRoot.SetPlacementMode(settings.PlacementMode);
+            if (presentationMode != PresentationMode.Original)
+            {
+                _lastNonResolvedPresentationMode = presentationMode;
+            }
+            if (transaction.Includes(GbaAdminOperation.ImportRom))
+            {
+                RequestRomImport();
+            }
+            if (transaction.Includes(GbaAdminOperation.SaveState))
+            {
+                RequestQuickState(save: true);
+            }
+            if (transaction.Includes(GbaAdminOperation.LoadState))
+            {
+                RequestQuickState(save: false);
+            }
+            Debug.Log($"GBA XR: admin console applied {settings.PresentationMode} presentation mode and {settings.PlacementMode} screen placement. Emulation cadence remains fixed at {FixedEmulationFramesPerSecond} FPS.");
+            _adminConsoleView.Refresh(
+                _adminConsole.Active,
+                GetWorkerState(),
+                _leaseFrameRate.FramesPerSecond,
+                _adminConsoleSelectedRow,
+                _romImportService.Entries?.Count ?? 0,
+                DescribeRomImportStatus(),
+                _stateStatus);
+        }
+
+        private void RequestQuickState(bool save)
+        {
+            if (_worker == IntPtr.Zero || !_started)
+            {
+                _stateStatus = "No active ROM worker is available.";
+                Debug.LogWarning($"GBA XR state: {_stateStatus}");
+                return;
+            }
+
+            var paths = GbaAppPrivateStoragePaths.Create(Application.persistentDataPath);
+            var identity = _activeLibraryRom?.StableId ?? romRelativePath;
+            if (!GbaSaveStatePolicy.TryCreateSlotPath(
+                    paths,
+                    identity,
+                    GbaSaveStatePolicy.QuickSlot,
+                    out var statePath,
+                    out var error))
+            {
+                _stateStatus = error;
+                Debug.LogWarning($"GBA XR state: {error}");
+                return;
+            }
+
+            if (save)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(statePath));
+            }
+            else if (!File.Exists(statePath))
+            {
+                _stateStatus = "Quick slot 0 has no saved state for this ROM.";
+                Debug.LogWarning($"GBA XR state: {_stateStatus}");
+                return;
+            }
+
+            var status = save
+                ? GbaNativeBindings.gbaxr_mgba_worker_save_state(_worker, statePath)
+                : GbaNativeBindings.gbaxr_mgba_worker_load_state(_worker, statePath);
+            if (status != GbaNativeBindings.Ok)
+            {
+                _stateStatus = save
+                    ? "Saving quick slot 0 failed; the prior state was retained."
+                    : "Loading quick slot 0 failed; the active session was retained.";
+                Debug.LogError($"GBA XR state: {_stateStatus} Native status={status}.");
+                return;
+            }
+
+            _stateStatus = save
+                ? "Saved quick slot 0."
+                : "Loaded quick slot 0.";
+            if (!save)
+            {
+                _presentedFrameCount = 0;
+                _verifiedFixtureHash = false;
+                _verifiedProvenanceContract = false;
+            }
+            Debug.Log($"GBA XR state: {_stateStatus}");
+        }
+
+        /// <summary>
+        /// Opens the Android picker. A valid selection starts the selected ROM.
+        /// </summary>
+        public bool RequestRomImport()
+        {
+            return _romImportService != null && _romImportService.BeginImport();
+        }
+
+        private void OnRomPickerCompleted(GbaRomImportOutcome outcome)
+        {
+            if (outcome.Kind == GbaRomImportOutcomeKind.Success && outcome.Metadata != null)
+            {
+                if (RequestLaunchSelectedLibraryRom(outcome.Metadata))
+                {
+                    CloseAdminConsole();
+                }
+                else if (_adminConsole != null && _adminConsole.IsOpen)
+                {
+                    Debug.LogError($"GBA XR: selected ROM could not be started: {_romLaunchStatus}");
+                    RefreshAdminConsoleView();
+                }
+            }
+            else if (_adminConsole != null && _adminConsole.IsOpen)
+            {
+                RefreshAdminConsoleView();
+            }
+        }
+
+        private void OnDestroy()
+        {
+            if (_romImportService != null) _romImportService.ImportCompleted -= OnRomPickerCompleted;
+        }
+
+        private void OnValidate()
+        {
+            presentationMode = NormalizePresentationMode(presentationMode);
+        }
+
+        private static PresentationMode NormalizePresentationMode(PresentationMode mode)
+        {
+            return Enum.IsDefined(typeof(PresentationMode), mode)
+                ? mode
+                : PresentationMode.Auto;
+        }
+
         private static uint ReadGamepadKeys()
         {
             var gamepad = Gamepad.current;
@@ -1099,32 +1795,24 @@ namespace GbaXr
             if (gamepad.dpad.left.isPressed) keys |= 1U << 5;
             if (gamepad.dpad.up.isPressed) keys |= 1U << 6;
             if (gamepad.dpad.down.isPressed) keys |= 1U << 7;
-            if (gamepad.rightShoulder.isPressed) keys |= 1U << 8;
-            if (gamepad.leftShoulder.isPressed) keys |= 1U << 9;
+            keys |= MapShoulderKeys(gamepad.buttonWest.isPressed, gamepad.buttonNorth.isPressed,
+                gamepad.leftShoulder.isPressed, gamepad.rightShoulder.isPressed);
             return keys;
         }
 
-        private void HandlePresentationModeToggle()
+        internal static uint MapShoulderKeys(bool xboxX, bool xboxY, bool leftShoulder, bool rightShoulder)
         {
-            // Xbox Y is not mapped to a GBA key. It toggles only the Unity
-            // presentation path, allowing an on-headset A/B check against the
-            // canonical resolved surface without restarting the emulator.
-            if (Gamepad.current == null || !Gamepad.current.buttonNorth.wasPressedThisFrame)
-            {
-                return;
-            }
+            uint keys = 0U;
+            if (xboxY || rightShoulder) keys |= 1U << 8; // GBA R
+            if (xboxX || leftShoulder) keys |= 1U << 9;  // GBA L
+            return keys;
+        }
 
-            if (presentationMode == PresentationMode.ForceResolved)
-            {
-                presentationMode = _lastNonResolvedPresentationMode;
-                Debug.Log($"GBA XR: controller restored {presentationMode} presentation mode.");
-            }
-            else
-            {
-                _lastNonResolvedPresentationMode = presentationMode;
-                presentationMode = PresentationMode.ForceResolved;
-                Debug.Log("GBA XR: controller selected resolved-frame fallback.");
-            }
+        private int GetWorkerState()
+        {
+            return _worker == IntPtr.Zero
+                ? -1
+                : GbaNativeBindings.gbaxr_mgba_worker_state(_worker);
         }
 
         private string DescribePixel(int x, int y)
@@ -1141,29 +1829,72 @@ namespace GbaXr
                 _initializationRoutine = null;
             }
             DisposeNative();
+            _activeLibraryRom = null;
+            _romLaunchState = GbaRomLaunchState.Idle;
+            _romLaunchStatus = "Native session stopped.";
         }
 
         private void OnGUI()
         {
             if (!showDeveloperOverlay || Application.platform != RuntimePlatform.Android) return;
             GUI.Box(new Rect(16, 16, 520, 120), "GBA XR Test Console");
-            GUI.Label(new Rect(28, 44, 495, 24), $"ROM: {romRelativePath}");
+            GUI.Label(new Rect(28, 44, 495, 24), $"ROM: {DescribeCurrentRom()}");
             GUI.Label(new Rect(28, 68, 495, 24), $"Worker: {(_worker == IntPtr.Zero ? "stopped" : GbaNativeBindings.gbaxr_mgba_worker_state(_worker).ToString())}");
             GUI.Label(new Rect(28, 92, 495, 24), $"Gamepad: {(Gamepad.current == null ? "none" : Gamepad.current.displayName)}");
+        }
+
+        private void ResetSessionPresentationState()
+        {
+            _presentedFrameCount = 0;
+            _verifiedFixtureHash = false;
+            _verifiedProvenanceContract = false;
+            _verifiedVisiblePartition = false;
+            _forcePartitionVerified = false;
+            _verifiedIndependentBg0 = false;
+            _verifiedIndependentBgTie = false;
+            _verifiedIndependentObj = false;
+            _profileActive = false;
+            _usingForcePartition = false;
+            _usingExtendedForcePartition = false;
+            _usingForcePartitionParallax = false;
+            _loggedUnprofiledRomFallback = false;
+            _loggedForcedUnprofiledCandidates = false;
+            _loggedForcePartition = false;
+            ResetForcePartitionParallaxReference();
+            _layeredSurface?.Hide();
+            var resolvedRenderer = _surface?.GetComponent<Renderer>();
+            if (resolvedRenderer != null)
+            {
+                resolvedRenderer.enabled = true;
+            }
         }
 
         private void DisposeNative()
         {
             _started = false;
-            _presentedFrameCount = 0;
-            _verifiedFixtureHash = false;
-            _verifiedProvenanceContract = false;
-            _verifiedVisiblePartition = false;
-            _verifiedIndependentBg0 = false;
-            _verifiedIndependentBgTie = false;
-            _verifiedIndependentObj = false;
+            ResetSessionPresentationState();
+            _leaseFrameRate.Reset(Time.unscaledTime);
+            _lastAudioUnderflowFrames = 0U;
+            _lastAudioStreamingCallbacks = 0U;
+            _lastAudioPcmFramesRequested = 0U;
+            _lastAudioPcmFramesPulled = 0U;
+            _lastAudioPcmEmptyReads = 0U;
+            _lastAudioNonSilentPcmFramesPulled = 0U;
+            _nextAudioUnderflowLogTime = 0f;
+            _nextAudioLivenessCheckTime = 0f;
+            _lastAudioFaultKind = GbaAudioFaultKind.None;
+            _audioOutputPrimed = false;
+            _frontendRuntime?.UpdateAudioStatus(new GbaFrontendAudioStatus(
+                GbaFrontendAudioState.Stopped,
+                0U,
+                0U));
+            // Detach even after a partially failed native start. The audio
+            // callback may never retain a pointer beyond this point.
+            _audioOutput?.DetachWorker();
             if (_worker != IntPtr.Zero)
             {
+                // The audio callback can run on Unity's audio thread. Gate it
+                // before native worker destruction so it cannot read freed PCM.
                 GbaNativeBindings.gbaxr_mgba_worker_destroy(_worker);
                 _worker = IntPtr.Zero;
             }
@@ -1172,6 +1903,131 @@ namespace GbaXr
                 GbaNativeBindings.gbaxr_destroy(_bridge);
                 _bridge = IntPtr.Zero;
             }
+        }
+
+        private void UpdateAudioDiagnostics()
+        {
+            if (_audioOutput == null || _worker == IntPtr.Zero)
+            {
+                return;
+            }
+
+            var availableFrames = GbaNativeBindings.gbaxr_mgba_worker_audio_available_frames(_worker);
+            var mgbaSourceSampleRate = GbaNativeBindings.gbaxr_mgba_worker_mgba_audio_sample_rate(_worker);
+            var droppedFrames = GbaNativeBindings.gbaxr_mgba_worker_audio_dropped_frames(_worker);
+            if (!_audioOutputPrimed)
+            {
+                _frontendRuntime.UpdateAudioStatus(new GbaFrontendAudioStatus(
+                    GbaFrontendAudioState.Priming,
+                    availableFrames,
+                    droppedFrames));
+                if (availableFrames < AudioPrimeFrames)
+                {
+                    return;
+                }
+
+                _audioOutput.AttachWorker(_worker);
+                _lastAudioUnderflowFrames = _audioOutput.TotalUnderflowFrames;
+                _lastAudioStreamingCallbacks = _audioOutput.TotalStreamingCallbacks;
+                _lastAudioPcmFramesRequested = _audioOutput.TotalNativePcmFramesRequested;
+                _lastAudioPcmFramesPulled = _audioOutput.TotalNativePcmFramesPulled;
+                _lastAudioPcmEmptyReads = _audioOutput.TotalNativePcmEmptyReads;
+                _lastAudioNonSilentPcmFramesPulled = _audioOutput.TotalNonSilentPcmFramesPulled;
+                _nextAudioUnderflowLogTime = 0f;
+                _nextAudioLivenessCheckTime = Time.unscaledTime + AudioLivenessIntervalSeconds;
+                _lastAudioFaultKind = GbaAudioFaultKind.None;
+                _audioOutputPrimed = true;
+                _frontendRuntime.UpdateAudioStatus(new GbaFrontendAudioStatus(
+                    GbaFrontendAudioState.Active,
+                    availableFrames,
+                    droppedFrames));
+                Debug.Log(
+                    $"GBA XR audio: attached 48 kHz PCM output after priming {availableFrames} frame(s); " +
+                    $"mGBA source rate is reported separately as it changes. {DescribeAudioTelemetry(_audioOutput.GetTelemetry())}");
+                return;
+            }
+            var underflowFrames = _audioOutput.TotalUnderflowFrames;
+            var hasNewUnderflow = underflowFrames != _lastAudioUnderflowFrames;
+            var audioState = hasNewUnderflow
+                ? GbaFrontendAudioState.Underflowing
+                : GbaFrontendAudioState.Active;
+            if (hasNewUnderflow && Time.unscaledTime >= _nextAudioUnderflowLogTime)
+            {
+                Debug.LogWarning(
+                    $"GBA XR audio: Unity output underflowed {underflowFrames - _lastAudioUnderflowFrames} frame(s); " +
+                    $"available={availableFrames}, nativeDropped={droppedFrames}, source={mgbaSourceSampleRate} Hz.");
+                _lastAudioUnderflowFrames = underflowFrames;
+                _nextAudioUnderflowLogTime = Time.unscaledTime + 1f;
+            }
+
+            var streamingCallbacks = _audioOutput.TotalStreamingCallbacks;
+            var pcmFramesRequested = _audioOutput.TotalNativePcmFramesRequested;
+            var pcmFramesPulled = _audioOutput.TotalNativePcmFramesPulled;
+            var pcmEmptyReads = _audioOutput.TotalNativePcmEmptyReads;
+            var nonSilentPcmFramesPulled = _audioOutput.TotalNonSilentPcmFramesPulled;
+            if (Time.unscaledTime >= _nextAudioLivenessCheckTime)
+            {
+                var callbackDelta = streamingCallbacks - _lastAudioStreamingCallbacks;
+                var pcmFramesRequestedDelta = pcmFramesRequested - _lastAudioPcmFramesRequested;
+                var pcmFramesPulledDelta = pcmFramesPulled - _lastAudioPcmFramesPulled;
+                var pcmEmptyReadsDelta = pcmEmptyReads - _lastAudioPcmEmptyReads;
+                var nonSilentPcmFramesPulledDelta = nonSilentPcmFramesPulled - _lastAudioNonSilentPcmFramesPulled;
+                var telemetry = _audioOutput.GetTelemetry();
+                var fault = GbaAudioFaultPolicy.Classify(
+                    telemetry,
+                    callbackDelta,
+                    pcmFramesRequestedDelta,
+                    pcmFramesPulledDelta,
+                    availableFrames);
+                var ringNeedsConsumer = availableFrames >= AudioPrimeFrames || droppedFrames != 0U;
+                if (ringNeedsConsumer && fault != GbaAudioFaultKind.None && fault != _lastAudioFaultKind)
+                {
+                    Debug.LogError(
+                        $"GBA XR audio fault={fault}; callbacks={callbackDelta}, pcmRequested={pcmFramesRequestedDelta}, " +
+                        $"pcmPulled={pcmFramesPulledDelta}, emptyReads={pcmEmptyReadsDelta}, " +
+                        $"nonSilent={nonSilentPcmFramesPulledDelta}, " +
+                        $"available={availableFrames}, nativeDropped={droppedFrames}, source={mgbaSourceSampleRate} Hz. " +
+                        DescribeAudioTelemetry(telemetry));
+                }
+                else if (_lastAudioFaultKind != GbaAudioFaultKind.None && fault == GbaAudioFaultKind.None)
+                {
+                    Debug.Log($"GBA XR audio: output liveness recovered. {DescribeAudioTelemetry(telemetry)}");
+                }
+
+                // The counters are intentionally only observed on the main
+                // thread. A zero nonSilent delta is informational because a
+                // game may legitimately be quiet; it is never a fault alone.
+                Debug.Log(
+                    $"GBA XR audio diagnostic: callbacks={callbackDelta}, pcmRequested={pcmFramesRequestedDelta}, " +
+                    $"pcmPulled={pcmFramesPulledDelta}, emptyReads={pcmEmptyReadsDelta}, " +
+                    $"nonSilent={nonSilentPcmFramesPulledDelta}, available={availableFrames}, " +
+                    $"nativeDropped={droppedFrames}, source={mgbaSourceSampleRate} Hz. " +
+                    DescribeAudioTelemetry(telemetry));
+
+                _lastAudioFaultKind = fault;
+                _lastAudioStreamingCallbacks = streamingCallbacks;
+                _lastAudioPcmFramesRequested = pcmFramesRequested;
+                _lastAudioPcmFramesPulled = pcmFramesPulled;
+                _lastAudioPcmEmptyReads = pcmEmptyReads;
+                _lastAudioNonSilentPcmFramesPulled = nonSilentPcmFramesPulled;
+                _nextAudioLivenessCheckTime = Time.unscaledTime + AudioLivenessIntervalSeconds;
+            }
+
+            _audioOutput.UpdateNativeDiagnostics(availableFrames, mgbaSourceSampleRate, droppedFrames);
+            _frontendRuntime.UpdateAudioStatus(new GbaFrontendAudioStatus(
+                audioState,
+                availableFrames,
+                droppedFrames));
+        }
+
+        private static string DescribeAudioTelemetry(GbaAudioOutputTelemetry telemetry)
+        {
+            return $"sourceEnabled={telemetry.SourceEnabled}, sourceActive={telemetry.SourceActive}, " +
+                   $"sourcePlaying={telemetry.SourcePlaying}, clipAttached={telemetry.StreamingClipAttached}, " +
+                   $"outputRate={telemetry.OutputSampleRate}, dspBuffer={telemetry.DspBufferSize}, " +
+                   $"callbacks={telemetry.CallbackCount}, pcmRequested={telemetry.NativePcmFramesRequested}, " +
+                   $"pcmPulled={telemetry.NativePcmFramesPulled}, emptyReads={telemetry.NativePcmEmptyReads}, " +
+                   $"nonSilent={telemetry.NonSilentPcmFramesPulled}.";
         }
     }
 }
