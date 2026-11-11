@@ -84,6 +84,15 @@ namespace GbaXr
         }
     }
 
+    /// <summary>Controls when the silent filter-host voice may consume an audio voice.</summary>
+    internal static class GbaAudioSourceLifecyclePolicy
+    {
+        internal static bool ShouldKeepFilterHostAlive(bool audioOutputIsActive, bool workerAttached)
+        {
+            return audioOutputIsActive && workerAttached;
+        }
+    }
+
     /// <summary>Pure PCM conversion and channel-routing rules for GBA audio.</summary>
     internal static class GbaAudioPcmPolicy
     {
@@ -126,9 +135,9 @@ namespace GbaXr
 
     /// <summary>
     /// Pulls backend-owned, 48 kHz stereo PCM into Unity's direct audio-filter
-    /// callback. A long silent clip keeps the 2D AudioSource alive, but never
-    /// supplies emulation PCM. The callback performs no Unity API calls,
-    /// locks, logging, or managed allocations.
+    /// callback. A long silent clip hosts the 2D AudioSource only while a
+    /// native worker is attached; it never supplies emulation PCM. The callback
+    /// performs no Unity API calls, locks, logging, or managed allocations.
     /// </summary>
     [DisallowMultipleComponent]
     [RequireComponent(typeof(AudioSource))]
@@ -193,8 +202,9 @@ namespace GbaXr
             // Keep the filter source from being virtualized behind unrelated
             // voices; the actual PCM is supplied by OnAudioFilterRead.
             _audioSource.priority = 0;
-            // This silent non-streaming clip only keeps Unity's source voice
-            // active so OnAudioFilterRead receives the device-channel buffer.
+            // When playback is enabled for an attached worker, this silent
+            // non-streaming clip hosts the source voice so OnAudioFilterRead
+            // receives the device-channel buffer.
             _filterHostClip = AudioClip.Create(
                 "GBA XR Audio Filter Host",
                 FilterHostClipFrames,
@@ -207,16 +217,12 @@ namespace GbaXr
 
         private void OnEnable()
         {
-            EnsureStreamingSourcePlaying();
+            ReconcileStreamingSource();
         }
 
         private void OnDisable()
         {
             DetachWorker();
-            if (_audioSource != null)
-            {
-                _audioSource.Stop();
-            }
         }
 
         private void OnDestroy()
@@ -235,7 +241,7 @@ namespace GbaXr
             RefreshCachedOutputSampleRate();
             Volatile.Write(ref _workerBackend, (int)backend);
             Interlocked.Exchange(ref _workerHandle, worker.ToInt64());
-            EnsureStreamingSourcePlaying();
+            ReconcileStreamingSource();
         }
 
         private void Update()
@@ -243,37 +249,37 @@ namespace GbaXr
             // XR output can resume without a new configuration callback. While
             // a worker is attached, reassert the filter host on the main
             // thread; this is a no-allocation no-op while it is already playing.
-            if (Interlocked.Read(ref _workerHandle) != 0L)
+            if (HasAttachedWorker)
             {
                 RefreshCachedOutputSampleRate();
-                EnsureStreamingSourcePlaying();
+                ReconcileStreamingSource();
             }
         }
 
         private void OnApplicationFocus(bool hasFocus)
         {
-            if (hasFocus && Interlocked.Read(ref _workerHandle) != 0L)
+            if (hasFocus && HasAttachedWorker)
             {
                 RefreshCachedOutputSampleRate();
-                EnsureStreamingSourcePlaying();
+                ReconcileStreamingSource();
             }
         }
 
         private void OnApplicationPause(bool pauseStatus)
         {
-            if (!pauseStatus && Interlocked.Read(ref _workerHandle) != 0L)
+            if (!pauseStatus && HasAttachedWorker)
             {
                 RefreshCachedOutputSampleRate();
-                EnsureStreamingSourcePlaying();
+                ReconcileStreamingSource();
             }
         }
 
         private void OnAudioConfigurationChanged(bool deviceWasChanged)
         {
             RefreshCachedOutputSampleRate();
-            if (Interlocked.Read(ref _workerHandle) != 0L)
+            if (HasAttachedWorker)
             {
-                EnsureStreamingSourcePlaying();
+                ReconcileStreamingSource();
             }
         }
 
@@ -284,11 +290,14 @@ namespace GbaXr
         internal void DetachWorker()
         {
             Interlocked.Exchange(ref _workerHandle, 0L);
-            Volatile.Write(ref _workerBackend, (int)GbaNativeSessionBackend.DirectMgba);
+            StopStreamingSource();
             while (Volatile.Read(ref _callbacksInFlight) != 0)
             {
                 Thread.Yield();
             }
+            // A callback that read the old worker just before the gate closed
+            // must retain its matching native binding until it has returned.
+            Volatile.Write(ref _workerBackend, (int)GbaNativeSessionBackend.DirectMgba);
             ResetReadStateAfterCallbacksStopped();
         }
 
@@ -335,9 +344,19 @@ namespace GbaXr
                 TotalNonSilentPcmFramesPulled);
         }
 
-        private void EnsureStreamingSourcePlaying()
+        private bool HasAttachedWorker => Interlocked.Read(ref _workerHandle) != 0L;
+
+        private void ReconcileStreamingSource()
         {
-            if (_audioSource == null || !isActiveAndEnabled || !gameObject.activeInHierarchy)
+            var shouldKeepFilterHostAlive = GbaAudioSourceLifecyclePolicy.ShouldKeepFilterHostAlive(
+                isActiveAndEnabled && gameObject.activeInHierarchy,
+                HasAttachedWorker);
+            if (!shouldKeepFilterHostAlive)
+            {
+                StopStreamingSource();
+                return;
+            }
+            if (_audioSource == null)
             {
                 return;
             }
@@ -352,6 +371,25 @@ namespace GbaXr
             if (!_audioSource.isPlaying)
             {
                 _audioSource.Play();
+            }
+        }
+
+        private void StopStreamingSource()
+        {
+            if (_audioSource == null)
+            {
+                return;
+            }
+
+            if (_audioSource.isPlaying)
+            {
+                _audioSource.Stop();
+            }
+            // Disable the silent filter host completely between sessions; it
+            // is re-enabled before playback in ReconcileStreamingSource.
+            if (_audioSource.enabled)
+            {
+                _audioSource.enabled = false;
             }
         }
 

@@ -177,14 +177,20 @@ Prerequisites: Unity 6 with Android Build Support (SDK, NDK, OpenJDK), a physica
 `ProjectSettings/AudioManager.asset` deliberately sets **Enable Output
 Suspension** off (`m_EnableOutputSuspension: 0`). Galaxy XR previously showed a
 live mGBA ring but zero Unity audio callbacks despite a listener and 2D
-source. Keeping Unity's output awake avoids that dormant-output path, at the
-cost of some additional idle battery use while the app is foregrounded. Do not
-claim the tradeoff is acceptable until headset battery/thermal validation is
-recorded.
+source. This avoids that dormant-output path while a session is playing. Do
+not claim the tradeoff is acceptable until headset battery/thermal validation
+is recorded.
 
 The runtime reasserts the direct-filter `AudioSource` after worker attach,
 focus, pause-resume, audio configuration changes, and while an audio worker is
-attached. A long silent 48 kHz source clip only keeps the voice alive;
+attached. The silent 48 kHz filter host is stopped and its `AudioSource` is
+disabled whenever no native audio worker is attached, including before launch,
+during session priming, and after session disposal, so it does not retain a
+Unity voice or invoke audio-filter callbacks while no emulation audio worker
+is active. It is re-enabled only after the native PCM ring is primed. This
+removes the app's persistent silent-source work, but does not by itself
+guarantee that the platform audio device suspends because output suspension
+remains disabled.
 `OnAudioFilterRead` directly fills Unity's actual output-channel buffer from
 the native stereo PCM ring. It deliberately does not call `AudioSettings.Reset`
 on XR: a callback-local linear resampler consumes the fixed native 48 kHz PCM

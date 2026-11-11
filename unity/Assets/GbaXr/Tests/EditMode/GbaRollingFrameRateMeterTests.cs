@@ -9,12 +9,14 @@ namespace GbaXr.Tests
         {
             var meter = new GbaRollingFrameRateMeter();
             meter.Reset(0f);
+            var updated = false;
 
             for (var frame = 1; frame <= 60; frame++)
             {
-                meter.RecordCompletedLease(frame / 60f);
+                updated |= meter.RecordCompletedLease(frame / 60f);
             }
 
+            Assert.That(updated, Is.True);
             Assert.That(meter.FramesPerSecond, Is.EqualTo(60f).Within(0.01f));
         }
 
@@ -23,8 +25,9 @@ namespace GbaXr.Tests
         {
             var meter = new GbaRollingFrameRateMeter();
             meter.Reset(10f);
-            meter.RecordCompletedLease(10.5f);
+            var updated = meter.RecordCompletedLease(10.5f);
 
+            Assert.That(updated, Is.False);
             Assert.That(meter.FramesPerSecond, Is.Zero);
         }
     }

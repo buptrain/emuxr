@@ -142,6 +142,11 @@ namespace GbaXr
         private GbaAudioFaultKind _lastAudioFaultKind;
         private bool _audioOutputPrimed;
         private readonly GbaRollingFrameRateMeter _leaseFrameRate = new();
+        // UI views are rebuilt only after an input or lifecycle event changes
+        // what they display. The Update loop merely flushes these flags; it no
+        // longer rebuilds UGUI strings and layouts at the headset refresh rate.
+        private bool _startupMenuRefreshPending;
+        private bool _adminConsoleRefreshPending;
 
         /// <summary>Direct-mGBA frontend capabilities and transient audio state.</summary>
         public GbaFrontendRuntimeModel Frontend => _frontendRuntime;
@@ -365,6 +370,18 @@ namespace GbaXr
 
         private void Update()
         {
+            try
+            {
+                UpdateFrame();
+            }
+            finally
+            {
+                FlushPendingUiRefreshes();
+            }
+        }
+
+        private void UpdateFrame()
+        {
             if (!_started)
             {
                 if (_startupMenu != null && _startupMenu.IsOpen)
@@ -396,6 +413,7 @@ namespace GbaXr
                 _activeLibraryRom = null;
                 _romLaunchState = GbaRomLaunchState.FailedStopped;
                 _romLaunchStatus = $"The active native worker stopped with state {workerState}.";
+                RequestOpenUiRefreshes();
                 return;
             }
             UpdateAudioDiagnostics();
@@ -509,7 +527,11 @@ namespace GbaXr
             {
                 if (_nativeSession != null && _nativeSession.Release(ref lease) == GbaNativeBindings.Ok && completedLease)
                 {
-                    _leaseFrameRate.RecordCompletedLease(Time.unscaledTime);
+                    if (_leaseFrameRate.RecordCompletedLease(Time.unscaledTime) &&
+                        (_romLibraryConsole == null || !_romLibraryConsole.IsOpen))
+                    {
+                        RequestAdminConsoleRefresh();
+                    }
                 }
             }
         }
@@ -1497,6 +1519,57 @@ namespace GbaXr
             return GbaDepthProfile.SupportsSourceSet(sources);
         }
 
+        private bool IsStartupMenuViewVisible =>
+            _startupMenu != null && _startupMenu.IsOpen && _startupMenuView != null &&
+            _startupMenuView.gameObject.activeSelf;
+
+        private bool IsAdminConsoleViewVisible =>
+            _adminConsole != null && _adminConsole.IsOpen && _adminConsoleView != null &&
+            _adminConsoleView.gameObject.activeSelf;
+
+        private void RequestStartupMenuRefresh()
+        {
+            if (IsStartupMenuViewVisible)
+            {
+                _startupMenuRefreshPending = true;
+            }
+        }
+
+        private void RequestAdminConsoleRefresh()
+        {
+            if (IsAdminConsoleViewVisible)
+            {
+                _adminConsoleRefreshPending = true;
+            }
+        }
+
+        private void RequestOpenUiRefreshes()
+        {
+            RequestStartupMenuRefresh();
+            RequestAdminConsoleRefresh();
+        }
+
+        private void FlushPendingUiRefreshes()
+        {
+            if (_startupMenuRefreshPending)
+            {
+                _startupMenuRefreshPending = false;
+                if (IsStartupMenuViewVisible)
+                {
+                    _startupMenuView.Refresh(_startupMenu, IsLibretroCoreSelectionAvailable);
+                }
+            }
+
+            if (_adminConsoleRefreshPending)
+            {
+                _adminConsoleRefreshPending = false;
+                if (IsAdminConsoleViewVisible)
+                {
+                    RefreshAdminConsoleView();
+                }
+            }
+        }
+
         private void OpenStartupMenu()
         {
             if (_startupMenu == null || _startupMenuView == null) return;
@@ -1505,6 +1578,7 @@ namespace GbaXr
                 _adminConsole?.Active.RequestedCore ?? GbaCoreKind.DirectMgba,
                 _screenRoot.PlacementMode,
                 IsLibretroCoreSelectionAvailable);
+            _startupMenuRefreshPending = false;
             _startupMenuView.Show(_startupMenu, IsLibretroCoreSelectionAvailable);
             Debug.Log("GBA XR: Parallax Emu startup menu opened; gameplay input is suspended.");
         }
@@ -1513,6 +1587,7 @@ namespace GbaXr
         {
             if (_startupMenu == null || !_startupMenu.IsOpen) return;
             _startupMenu.Close();
+            _startupMenuRefreshPending = false;
             _startupMenuView?.Hide();
             Debug.Log("GBA XR: Parallax Emu startup menu closed; gameplay input restored.");
         }
@@ -1526,11 +1601,13 @@ namespace GbaXr
                 (_startupMenu.IsCapturingController ||
                  (_startupMenu.IsReviewingController && gamepad.rightStickButton.wasPressedThisFrame)))
             {
+                var refreshRequested = false;
                 if (gamepad.rightStickButton.wasPressedThisFrame)
                 {
                     _controllerDraft = _controllerMapping.Clone();
                     _startupMenu.CancelControllerCapture();
                     Debug.Log("GBA XR: controller calibration cancelled; active mapping unchanged.");
+                    refreshRequested = true;
                 }
                 else if (_mappingAwaitRelease)
                 {
@@ -1542,28 +1619,47 @@ namespace GbaXr
                     Debug.Log($"GBA XR: captured {_startupMenu.CaptureControl} = {GbaControllerMapping.Describe(binding)} in draft.");
                     _startupMenu.AdvanceControllerCapture();
                     _mappingAwaitRelease = true;
+                    refreshRequested = true;
                 }
-                _startupMenuView.Refresh(_startupMenu, IsLibretroCoreSelectionAvailable);
+                if (refreshRequested)
+                {
+                    RequestStartupMenuRefresh();
+                }
                 return;
             }
 
+            var menuChanged = false;
             if (gamepad.buttonEast.wasPressedThisFrame)
             {
                 ExecuteStartupMenuAction(_startupMenu.Back());
+                menuChanged = true;
             }
-            if (_startupMenu.IsOpen && gamepad.dpad.up.wasPressedThisFrame) _startupMenu.Move(-1);
-            if (_startupMenu.IsOpen && gamepad.dpad.down.wasPressedThisFrame) _startupMenu.Move(1);
+            if (_startupMenu.IsOpen && gamepad.dpad.up.wasPressedThisFrame)
+            {
+                _startupMenu.Move(-1);
+                menuChanged = true;
+            }
+            if (_startupMenu.IsOpen && gamepad.dpad.down.wasPressedThisFrame)
+            {
+                _startupMenu.Move(1);
+                menuChanged = true;
+            }
             if (_startupMenu.IsOpen && gamepad.buttonSouth.wasPressedThisFrame)
             {
                 ExecuteStartupMenuAction(_startupMenu.Activate());
+                menuChanged = true;
             }
-            if (_startupMenu.IsOpen)
+            if (_startupMenu.IsOpen && menuChanged)
             {
-                _startupMenuView.Refresh(_startupMenu, IsLibretroCoreSelectionAvailable);
+                RequestStartupMenuRefresh();
             }
             else
             {
-                _startupMenuView.Hide();
+                if (!_startupMenu.IsOpen)
+                {
+                    _startupMenuRefreshPending = false;
+                    _startupMenuView.Hide();
+                }
             }
         }
 
@@ -1642,6 +1738,7 @@ namespace GbaXr
         {
             _adminConsoleSelectedRow = 0;
             _adminConsole.Open();
+            _adminConsoleRefreshPending = false;
             _adminConsoleView.Show(
                 _adminConsole.Draft,
                 workerState,
@@ -1670,6 +1767,7 @@ namespace GbaXr
             }
             _romLibraryConsole?.Close();
             _adminConsole.Close();
+            _adminConsoleRefreshPending = false;
             _adminConsoleView.Hide();
             Debug.Log("GBA XR: admin console closed; gameplay input restored.");
         }
@@ -1697,21 +1795,24 @@ namespace GbaXr
                 HandleRomLibraryInput(gamepad);
                 return;
             }
+            var consoleChanged = false;
             if (gamepad.dpad.up.wasPressedThisFrame)
             {
                 _adminConsoleSelectedRow = (_adminConsoleSelectedRow + AdminConsoleRowCount - 1) % AdminConsoleRowCount;
+                consoleChanged = true;
             }
             if (gamepad.dpad.down.wasPressedThisFrame)
             {
                 _adminConsoleSelectedRow = (_adminConsoleSelectedRow + 1) % AdminConsoleRowCount;
+                consoleChanged = true;
             }
             if (gamepad.dpad.left.wasPressedThisFrame)
             {
-                AdjustAdminConsoleSelection(-1);
+                consoleChanged |= AdjustAdminConsoleSelection(-1);
             }
             if (gamepad.dpad.right.wasPressedThisFrame)
             {
-                AdjustAdminConsoleSelection(1);
+                consoleChanged |= AdjustAdminConsoleSelection(1);
             }
             if (gamepad.buttonSouth.wasPressedThisFrame)
             {
@@ -1723,6 +1824,7 @@ namespace GbaXr
                 else if (_adminConsoleSelectedRow == AdminApplyRow)
                 {
                     ApplyAdminConsole();
+                    consoleChanged = true;
                 }
                 else if (_adminConsoleSelectedRow == AdminCloseRow)
                 {
@@ -1731,13 +1833,13 @@ namespace GbaXr
                 }
             }
 
-            if (_adminConsole.IsOpen)
+            if (_adminConsole.IsOpen && consoleChanged)
             {
-                RefreshAdminConsoleView();
+                RequestAdminConsoleRefresh();
             }
         }
 
-        private void AdjustAdminConsoleSelection(int direction)
+        private bool AdjustAdminConsoleSelection(int direction)
         {
             var draft = _adminConsole.Draft;
             if (_adminConsoleSelectedRow == 1)
@@ -1746,24 +1848,29 @@ namespace GbaXr
                 var currentIndex = Array.IndexOf(modes, NormalizePresentationMode(draft.PresentationMode));
                 var nextIndex = (currentIndex + direction + modes.Length) % modes.Length;
                 _adminConsole.SetDraftPresentationMode(modes[nextIndex]);
+                return true;
             }
             else if (_adminConsoleSelectedRow == 2)
             {
                 var modes = (GbaScreenPlacementMode[])Enum.GetValues(typeof(GbaScreenPlacementMode));
                 var nextIndex = ((int)draft.PlacementMode + direction + modes.Length) % modes.Length;
                 _adminConsole.SetDraftPlacementMode(modes[nextIndex]);
+                return true;
             }
             else if (IsLibretroCoreSelectionAvailable && _adminConsoleSelectedRow == AdminCoreRow)
             {
                 var cores = (GbaCoreKind[])Enum.GetValues(typeof(GbaCoreKind));
                 var currentIndex = Array.IndexOf(cores, draft.RequestedCore);
                 _adminConsole.SetDraftRequestedCore(cores[(currentIndex + direction + cores.Length) % cores.Length]);
+                return true;
             }
+            return false;
         }
 
         private void OpenRomLibrary()
         {
             _romLibraryConsole.Open(_romImportService?.Entries);
+            _adminConsoleRefreshPending = false;
             _adminConsoleView.ShowLibrary(
                 _romLibraryConsole,
                 GetWorkerState(),
@@ -1778,20 +1885,22 @@ namespace GbaXr
             _romLibraryConsole.Close();
             if (_adminConsole.IsOpen)
             {
-                RefreshAdminConsoleView();
+                RequestAdminConsoleRefresh();
             }
         }
 
         private void HandleRomLibraryInput(Gamepad gamepad)
         {
-            _romLibraryConsole.UpdateEntries(_romImportService?.Entries);
+            var libraryChanged = false;
             if (gamepad.dpad.up.wasPressedThisFrame)
             {
                 _romLibraryConsole.MoveSelection(-1);
+                libraryChanged = true;
             }
             if (gamepad.dpad.down.wasPressedThisFrame)
             {
                 _romLibraryConsole.MoveSelection(1);
+                libraryChanged = true;
             }
             if (gamepad.buttonSouth.wasPressedThisFrame)
             {
@@ -1806,6 +1915,7 @@ namespace GbaXr
                             CloseAdminConsole();
                             return;
                         }
+                        libraryChanged = true;
                         break;
                     case GbaRomLibraryConsoleAction.LaunchUnavailable:
                         Debug.LogWarning(
@@ -1816,7 +1926,10 @@ namespace GbaXr
                         return;
                 }
             }
-            RefreshAdminConsoleView();
+            if (_romLibraryConsole.IsOpen && libraryChanged)
+            {
+                RequestAdminConsoleRefresh();
+            }
         }
 
         private void RefreshAdminConsoleView()
@@ -1825,7 +1938,6 @@ namespace GbaXr
             var importStatus = DescribeRomImportStatus();
             if (_romLibraryConsole.IsOpen)
             {
-                _romLibraryConsole.UpdateEntries(_romImportService?.Entries);
                 _adminConsoleView.RefreshLibrary(
                     _romLibraryConsole,
                     workerState,
@@ -1943,16 +2055,7 @@ namespace GbaXr
                 RequestRomImport();
             }
             Debug.Log($"GBA XR: admin console applied {settings.PresentationMode} presentation mode and {settings.PlacementMode} screen placement. Requested core={settings.RequestedCore}; emulation cadence remains fixed at {FixedEmulationFramesPerSecond} FPS.");
-            _adminConsoleView.Refresh(
-                _adminConsole.Active,
-                GetWorkerState(),
-                _leaseFrameRate.FramesPerSecond,
-                _adminConsoleSelectedRow,
-                _romImportService.Entries?.Count ?? 0,
-                DescribeRomImportStatus(),
-                _stateStatus,
-                IsLibretroCoreSelectionAvailable,
-                IsUncertifiedDiagnosticPreviewEnabled);
+            RequestAdminConsoleRefresh();
         }
 
         /// <summary>
@@ -2112,7 +2215,11 @@ namespace GbaXr
         /// </summary>
         public bool RequestRomImport()
         {
-            return _romImportService != null && _romImportService.BeginImport();
+            var requested = _romImportService != null && _romImportService.BeginImport();
+            // Beginning an import changes the visible status immediately; the
+            // completion callback schedules the later catalog/status refresh.
+            RequestOpenUiRefreshes();
+            return requested;
         }
 
         /// <summary>
@@ -2137,6 +2244,14 @@ namespace GbaXr
 
         private void OnRomPickerCompleted(GbaRomImportOutcome outcome)
         {
+            // The catalog changes only when the picker reports a result, so
+            // keep library-model reconciliation out of the per-frame/input
+            // path as well.
+            if (_romLibraryConsole != null && _romLibraryConsole.IsOpen)
+            {
+                _romLibraryConsole.UpdateEntries(_romImportService?.Entries);
+            }
+
             if (outcome.Kind == GbaRomImportOutcomeKind.Success && outcome.Metadata != null)
             {
                 if (RequestLaunchSelectedLibraryRom(outcome.Metadata))
@@ -2147,21 +2262,17 @@ namespace GbaXr
                 else if (_adminConsole != null && _adminConsole.IsOpen)
                 {
                     Debug.LogError($"GBA XR: selected ROM could not be started: {_romLaunchStatus}");
-                    RefreshAdminConsoleView();
+                    RequestOpenUiRefreshes();
                 }
                 else if (_startupMenu != null && _startupMenu.IsOpen)
                 {
                     Debug.LogError($"GBA XR: selected ROM could not be started: {_romLaunchStatus}");
-                    _startupMenuView.Refresh(_startupMenu, IsLibretroCoreSelectionAvailable);
+                    RequestOpenUiRefreshes();
                 }
             }
-            else if (_adminConsole != null && _adminConsole.IsOpen)
+            else
             {
-                RefreshAdminConsoleView();
-            }
-            else if (_startupMenu != null && _startupMenu.IsOpen)
-            {
-                _startupMenuView.Refresh(_startupMenu, IsLibretroCoreSelectionAvailable);
+                RequestOpenUiRefreshes();
             }
         }
 

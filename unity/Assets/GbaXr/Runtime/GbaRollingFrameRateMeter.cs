@@ -19,7 +19,12 @@ namespace GbaXr
             FramesPerSecond = 0f;
         }
 
-        internal void RecordCompletedLease(float unscaledTime)
+        /// <summary>
+        /// Records a completed lease and reports whether the displayed rolling
+        /// rate changed. Callers can update diagnostic UI at this cadence rather
+        /// than once per rendered frame.
+        /// </summary>
+        internal bool RecordCompletedLease(float unscaledTime)
         {
             if (!_hasWindow)
             {
@@ -30,12 +35,13 @@ namespace GbaXr
             var elapsed = unscaledTime - _windowStartTime;
             if (elapsed < RollingIntervalSeconds)
             {
-                return;
+                return false;
             }
 
             FramesPerSecond = _completedFrames / elapsed;
             _completedFrames = 0;
             _windowStartTime = unscaledTime;
+            return true;
         }
     }
 }
