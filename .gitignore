@@ -16,8 +16,14 @@
 /unity/unity_BurstDebugInformation_DoNotShip/
 /unity/test.apk
 
+# Legacy Unity project/cache accidentally tracked in earlier local history.
+# This directory must never be added to a releasable source repository.
+/GBAVR/
+
 # Legal / test-fixture boundary
 /third_party/mgba/
+/third_party/seedlessds-core/
+/third_party/seedlessds-app/
 /fixtures/gba/out/
 /unity/Assets/StreamingAssets/gba-fixtures/
 /unity/Assets/StreamingAssets/gba-user/
