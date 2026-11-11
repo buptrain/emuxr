@@ -135,7 +135,7 @@ namespace GbaXr.Tests
         public void ControllerMapping_BackCancelsDraftWorkflow()
         {
             var model = Open();
-            model.Move(2);
+            model.Move(GbaStartupMenuModel.RootItems.Length - 1);
             model.Activate();
             model.Activate();
             model.Activate();
