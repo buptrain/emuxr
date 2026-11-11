@@ -19,3 +19,11 @@ ctest --test-dir build/native -C Debug --output-on-failure
 - `docs/` — architecture, backlog, build instructions, and device-validation protocol.
 
 Read `docs/ARCHITECTURE.md` for the current system design and limits, then `docs/MGBA_INTEGRATION.md` before changing the core adapter or its patch. `docs/BUILD.md` covers local setup, `docs/TEST_STRATEGY.md` defines fixture/golden policy, and `docs/DEVICE_VALIDATION.md` is the physical-headset test protocol.
+
+## Unofficial release preparation
+
+The public source mirror and GitHub sideload-release procedure are intentionally
+separate from private development. See
+[`docs/GITHUB_UNOFFICIAL_RELEASE.md`](docs/GITHUB_UNOFFICIAL_RELEASE.md) and
+[`docs/PUBLIC_RELEASE_GATE.md`](docs/PUBLIC_RELEASE_GATE.md) before publishing
+source or an APK.

@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "releaseVersion": "v0.0.0-prerelease",
+  "emuxr": {
+    "repository": "https://github.com/buptrain/emuxr",
+    "commit": "REPLACE_WITH_AUDITED_PUBLIC_COMMIT",
+    "applicationId": "REPLACE_WITH_PRODUCTION_APPLICATION_ID",
+    "versionCode": 0,
+    "signingCertificateSha256": "REPLACE_WITH_CERTIFICATE_SHA256"
+  },
+  "apk": {
+    "fileName": "EmuXR-v0.0.0-prerelease-arm64-v8a.apk",
+    "sha256": "REPLACE_WITH_APK_SHA256",
+    "abi": "arm64-v8a",
+    "developerCoreDownloadEnabled": false
+  },
+  "directMgba": {
+    "artifact": "libgba_xr.so",
+    "sha256": "REPLACE_WITH_CORE_SHA256",
+    "sourceRepository": "https://github.com/buptrain/mgba-parallax",
+    "sourceTag": "REPLACE_WITH_IMMUTABLE_SOURCE_TAG",
+    "sourceCommit": "REPLACE_WITH_SOURCE_COMMIT",
+    "license": "MPL-2.0",
+    "bridgeAbiVersion": "REPLACE_WITH_BRIDGE_ABI"
+  },
+  "validation": {
+    "unityEditMode": "REPLACE_WITH_EVIDENCE_LINK_OR_RESULT",
+    "nativeTests": "REPLACE_WITH_EVIDENCE_LINK_OR_RESULT",
+    "galaxyXr": "REPLACE_WITH_DEVICE_EVIDENCE_LINK_OR_RESULT",
+    "native16KbAlignment": "REPLACE_WITH_EVIDENCE_LINK_OR_RESULT"
+  }
+}
