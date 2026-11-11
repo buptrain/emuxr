@@ -16,6 +16,11 @@
 /unity/unity_BurstDebugInformation_DoNotShip/
 /unity/test.apk
 
+# Locally built Android emulator/core plugins. These are retained only for
+# developer debugging and are supplied through the separate core-release path.
+/unity/Assets/Plugins/Android/**/*.so
+/unity/Assets/Plugins/Android/**/*.so.meta
+
 # Legacy Unity project/cache accidentally tracked in earlier local history.
 # This directory must never be added to a releasable source repository.
 /GBAVR/
