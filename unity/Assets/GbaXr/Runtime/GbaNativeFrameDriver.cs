@@ -61,13 +61,11 @@ namespace GbaXr
         private const uint AudioPrimeFrames = 4096U;
         private const uint FixedEmulationFramesPerSecond = 60U;
         private const float AudioLivenessIntervalSeconds = 2f;
-        private int AdminConsoleRowCount => IsLibretroCoreSelectionAvailable ? 9 : 8;
+        private int AdminConsoleRowCount => IsLibretroCoreSelectionAvailable ? 7 : 6;
         private int AdminCoreRow => 3;
         private int AdminLibraryRow => IsLibretroCoreSelectionAvailable ? 4 : 3;
-        private int AdminSaveStateRow => IsLibretroCoreSelectionAvailable ? 5 : 4;
-        private int AdminLoadStateRow => IsLibretroCoreSelectionAvailable ? 6 : 5;
-        private int AdminApplyRow => IsLibretroCoreSelectionAvailable ? 7 : 6;
-        private int AdminCloseRow => IsLibretroCoreSelectionAvailable ? 8 : 7;
+        private int AdminApplyRow => IsLibretroCoreSelectionAvailable ? 5 : 4;
+        private int AdminCloseRow => IsLibretroCoreSelectionAvailable ? 6 : 5;
         private bool IsLibretroCoreSelectionAvailable => GbaCoreSelectionPolicy.CanExposeCoreSelection(
             GbaLibretroReadinessStore.Load(),
             IsUncertifiedDiagnosticPreviewEnabled);
@@ -1576,6 +1574,18 @@ namespace GbaXr
                 case GbaStartupMenuAction.LoadRom:
                     RequestRomImport();
                     break;
+                case GbaStartupMenuAction.OpenStateSave:
+                case GbaStartupMenuAction.OpenStateLoad:
+                    RefreshStartupStateSlots();
+                    break;
+                case GbaStartupMenuAction.SaveStateSlot:
+                    if (RequestState(true, _startupMenu.SelectedStateSlot)) CloseStartupMenu();
+                    else RefreshStartupStateSlots();
+                    break;
+                case GbaStartupMenuAction.LoadStateSlot:
+                    if (RequestState(false, _startupMenu.SelectedStateSlot)) CloseStartupMenu();
+                    else RefreshStartupStateSlots();
+                    break;
                 case GbaStartupMenuAction.CommitCore:
                     CommitStartupCore(_startupMenu.SelectedCore);
                     break;
@@ -1712,16 +1722,6 @@ namespace GbaXr
                 }
                 else if (_adminConsoleSelectedRow == AdminApplyRow)
                 {
-                    ApplyAdminConsole();
-                }
-                else if (_adminConsoleSelectedRow == AdminSaveStateRow)
-                {
-                    _adminConsole.Request(GbaAdminOperation.SaveState);
-                    ApplyAdminConsole();
-                }
-                else if (_adminConsoleSelectedRow == AdminLoadStateRow)
-                {
-                    _adminConsole.Request(GbaAdminOperation.LoadState);
                     ApplyAdminConsole();
                 }
                 else if (_adminConsoleSelectedRow == AdminCloseRow)
@@ -1942,14 +1942,6 @@ namespace GbaXr
             {
                 RequestRomImport();
             }
-            if (transaction.Includes(GbaAdminOperation.SaveState))
-            {
-                RequestQuickState(save: true);
-            }
-            if (transaction.Includes(GbaAdminOperation.LoadState))
-            {
-                RequestQuickState(save: false);
-            }
             Debug.Log($"GBA XR: admin console applied {settings.PresentationMode} presentation mode and {settings.PlacementMode} screen placement. Requested core={settings.RequestedCore}; emulation cadence remains fixed at {FixedEmulationFramesPerSecond} FPS.");
             _adminConsoleView.Refresh(
                 _adminConsole.Active,
@@ -2039,13 +2031,15 @@ namespace GbaXr
             return true;
         }
 
-        private void RequestQuickState(bool save)
+        private void RequestQuickState(bool save) => RequestState(save, GbaSaveStatePolicy.QuickSlot);
+
+        private bool RequestState(bool save, int slot)
         {
             if (_nativeSession == null || !_started)
             {
                 _stateStatus = "No active ROM worker is available.";
                 Debug.LogWarning($"GBA XR state: {_stateStatus}");
-                return;
+                return false;
             }
 
             var paths = GbaAppPrivateStoragePaths.Create(Application.persistentDataPath);
@@ -2053,13 +2047,13 @@ namespace GbaXr
             if (!GbaSaveStatePolicy.TryCreateSlotPath(
                     paths,
                     identity,
-                    GbaSaveStatePolicy.QuickSlot,
+                    slot,
                     out var statePath,
                     out var error))
             {
                 _stateStatus = error;
                 Debug.LogWarning($"GBA XR state: {error}");
-                return;
+                return false;
             }
 
             if (save)
@@ -2068,24 +2062,24 @@ namespace GbaXr
             }
             else if (!File.Exists(statePath))
             {
-                _stateStatus = "Quick slot 0 has no saved state for this ROM.";
+                _stateStatus = $"Slot {slot + 1} is empty for this ROM.";
                 Debug.LogWarning($"GBA XR state: {_stateStatus}");
-                return;
+                return false;
             }
 
             var status = save ? _nativeSession.SaveState(statePath) : _nativeSession.LoadState(statePath);
             if (status != GbaNativeBindings.Ok)
             {
                 _stateStatus = save
-                    ? "Saving quick slot 0 failed; the prior state was retained."
-                    : "Loading quick slot 0 failed; the active session was retained.";
+                    ? $"Saving slot {slot + 1} failed; the prior state was retained."
+                    : $"Loading slot {slot + 1} failed; the active session was retained.";
                 Debug.LogError($"GBA XR state: {_stateStatus} Native status={status}.");
-                return;
+                return false;
             }
 
             _stateStatus = save
-                ? "Saved quick slot 0."
-                : "Loaded quick slot 0.";
+                ? $"Saved slot {slot + 1}."
+                : $"Loaded slot {slot + 1}.";
             if (!save)
             {
                 _presentedFrameCount = 0;
@@ -2094,6 +2088,23 @@ namespace GbaXr
                 _verifiedProvenanceContract = false;
             }
             Debug.Log($"GBA XR state: {_stateStatus}");
+            return true;
+        }
+
+        private void RefreshStartupStateSlots()
+        {
+            var descriptions = new string[GbaSaveStatePolicy.SlotCount];
+            var paths = GbaAppPrivateStoragePaths.Create(Application.persistentDataPath);
+            var identity = _activeLibraryRom?.StableId ?? romRelativePath;
+            for (var slot = 0; slot < descriptions.Length; slot++)
+            {
+                descriptions[slot] = $"Slot {slot + 1}: Empty";
+                if (GbaSaveStatePolicy.TryCreateSlotPath(paths, identity, slot, out var path, out _) && File.Exists(path))
+                {
+                    descriptions[slot] = $"Slot {slot + 1}: {File.GetLastWriteTimeUtc(path):yyyy-MM-dd HH:mm:ss} UTC";
+                }
+            }
+            _startupMenu?.SetStateSlots(descriptions);
         }
 
         /// <summary>

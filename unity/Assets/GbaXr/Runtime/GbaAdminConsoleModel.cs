@@ -8,8 +8,6 @@ namespace GbaXr
         ReloadCurrentRom,
         LoadStagedRom,
         ImportRom,
-        SaveState,
-        LoadState,
         SetPresentationMode,
         SetPlacementMode,
         ResetScreenTransform

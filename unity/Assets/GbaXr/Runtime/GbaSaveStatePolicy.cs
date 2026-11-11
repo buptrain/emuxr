@@ -9,7 +9,7 @@ namespace GbaXr
     internal static class GbaSaveStatePolicy
     {
         internal const int QuickSlot = 0;
-        private const int MaximumSlots = 9;
+        internal const int SlotCount = 8;
 
         internal static bool TryCreateSlotPath(
             GbaAppPrivateStoragePaths paths,
@@ -20,7 +20,7 @@ namespace GbaXr
         {
             absolutePath = null;
             error = null;
-            if (paths == null || slot < 0 || slot > MaximumSlots)
+            if (paths == null || slot < 0 || slot >= SlotCount)
             {
                 error = "The requested state slot is not supported.";
                 return false;

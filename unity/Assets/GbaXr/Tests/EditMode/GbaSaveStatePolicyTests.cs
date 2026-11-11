@@ -47,7 +47,8 @@ namespace GbaXr.Tests
             var paths = GbaAppPrivateStoragePaths.Create("C:/gba-xr-test");
 
             Assert.That(GbaSaveStatePolicy.TryCreateSlotPath(paths, "sha256:not-a-hash", 0, out _, out _), Is.False);
-            Assert.That(GbaSaveStatePolicy.TryCreateSlotPath(paths, "fixture", 10, out _, out _), Is.False);
+            Assert.That(GbaSaveStatePolicy.TryCreateSlotPath(paths, "fixture", 7, out _, out _), Is.True);
+            Assert.That(GbaSaveStatePolicy.TryCreateSlotPath(paths, "fixture", 8, out _, out _), Is.False);
         }
     }
 }

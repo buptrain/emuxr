@@ -3,13 +3,13 @@ using System.Collections.Generic;
 
 namespace GbaXr
 {
-    internal enum GbaStartupMenuPage { Root, Core, Settings, ControllerMapping, ViewMode }
-    internal enum GbaStartupMenuAction { None, LoadRom, CommitCore, ApplyViewMode, OpenAdvancedConsole, BeginControllerCapture, ApplyControllerMapping, ResetControllerMapping, CancelControllerMapping, Close }
+    internal enum GbaStartupMenuPage { Root, Core, Settings, ControllerMapping, ViewMode, StateSave, StateLoad }
+    internal enum GbaStartupMenuAction { None, LoadRom, OpenStateSave, OpenStateLoad, SaveStateSlot, LoadStateSlot, CommitCore, ApplyViewMode, OpenAdvancedConsole, BeginControllerCapture, ApplyControllerMapping, ResetControllerMapping, CancelControllerMapping, Close }
 
     /// <summary>Controller-only startup navigation. This model has no Unity UI or native-worker dependency.</summary>
     internal sealed class GbaStartupMenuModel
     {
-        internal static readonly string[] RootItems = { "Core Selection", "Load ROM", "Settings" };
+        internal static readonly string[] RootItems = { "Core Selection", "Load ROM", "Save State", "Load State", "Settings" };
         internal static readonly string[] SettingsItems = { "Controller Mapping", "View Mode", "Advanced Console" };
         internal static readonly string[] MappingLines =
         {
@@ -28,6 +28,8 @@ namespace GbaXr
         internal GbaCoreKind SelectedCore { get; private set; } = GbaCoreKind.DirectMgba;
         internal GbaScreenPlacementMode SelectedViewMode { get; private set; } = GbaScreenPlacementMode.VirtualField;
         internal int SelectedIndex => _selection.TryGetValue(Page, out var value) ? value : 0;
+        internal int SelectedStateSlot => SelectedIndex;
+        private readonly string[] _stateSlots = new string[8];
         internal bool IsCapturingController { get; private set; }
         internal bool IsReviewingController { get; private set; }
         internal int CaptureIndex { get; private set; }
@@ -41,6 +43,7 @@ namespace GbaXr
             GbaStartupMenuPage.Root => RootItems.Length,
             GbaStartupMenuPage.Core => _coreItems.Count,
             GbaStartupMenuPage.Settings => SettingsItems.Length,
+            GbaStartupMenuPage.StateSave or GbaStartupMenuPage.StateLoad => GbaSaveStatePolicy.SlotCount,
             GbaStartupMenuPage.ControllerMapping => IsCapturingController ? 0 : (IsReviewingController ? 2 : 1),
             GbaStartupMenuPage.ViewMode => 2,
             _ => 0
@@ -63,6 +66,18 @@ namespace GbaXr
             if (libretroAvailable) _coreItems.Add(GbaCoreKind.LibretroResolvedExperimental);
             ClampSelection();
         }
+
+        internal void SetStateSlots(string[] descriptions)
+        {
+            for (var index = 0; index < _stateSlots.Length; index++)
+            {
+                _stateSlots[index] = descriptions != null && index < descriptions.Length
+                    ? descriptions[index]
+                    : $"Slot {index + 1}: Empty";
+            }
+        }
+
+        internal IReadOnlyList<string> StateSlots => _stateSlots;
 
         internal void Close() => IsOpen = false;
 
@@ -90,6 +105,10 @@ namespace GbaXr
                     CaptureIndex = 0;
                     Page = GbaStartupMenuPage.Settings;
                     return GbaStartupMenuAction.CancelControllerMapping;
+                case GbaStartupMenuPage.StateSave:
+                case GbaStartupMenuPage.StateLoad:
+                    Page = GbaStartupMenuPage.Root;
+                    return GbaStartupMenuAction.None;
                 case GbaStartupMenuPage.ViewMode:
                     Page = GbaStartupMenuPage.Settings;
                     return GbaStartupMenuAction.None;
@@ -112,6 +131,10 @@ namespace GbaXr
                     return GbaStartupMenuAction.CommitCore;
                 case GbaStartupMenuPage.Settings:
                     return ActivateSettings();
+                case GbaStartupMenuPage.StateSave:
+                    return GbaStartupMenuAction.SaveStateSlot;
+                case GbaStartupMenuPage.StateLoad:
+                    return GbaStartupMenuAction.LoadStateSlot;
                 case GbaStartupMenuPage.ViewMode:
                     SelectedViewMode = SelectedIndex == 0
                         ? GbaScreenPlacementMode.VirtualField
@@ -155,6 +178,8 @@ namespace GbaXr
             {
                 case 0: Page = GbaStartupMenuPage.Core; return GbaStartupMenuAction.None;
                 case 1: return GbaStartupMenuAction.LoadRom;
+                case 2: Page = GbaStartupMenuPage.StateSave; return GbaStartupMenuAction.OpenStateSave;
+                case 3: Page = GbaStartupMenuPage.StateLoad; return GbaStartupMenuAction.OpenStateLoad;
                 default: Page = GbaStartupMenuPage.Settings; return GbaStartupMenuAction.None;
             }
         }

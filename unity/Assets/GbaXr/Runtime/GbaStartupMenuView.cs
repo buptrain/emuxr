@@ -45,7 +45,12 @@ namespace GbaXr
             var mapping = model.Page == GbaStartupMenuPage.ControllerMapping;
             _controllerReference.gameObject.SetActive(mapping);
             _controllerReferenceLabels.gameObject.SetActive(mapping);
-            if (mapping)
+            var stateSlots = model.Page == GbaStartupMenuPage.StateSave || model.Page == GbaStartupMenuPage.StateLoad;
+            if (stateSlots)
+            {
+                LayoutStateSlotCards();
+            }
+            else if (mapping)
             {
                 _controllerReference.color = model.IsCapturingController
                     ? new Color(0.12f, 0.43f, 0.9f, 0.95f) : new Color(0.22f, 0.43f, 0.7f, 0.9f);
@@ -88,6 +93,12 @@ namespace GbaXr
                     return cores;
                 case GbaStartupMenuPage.Settings:
                     return new List<string>(GbaStartupMenuModel.SettingsItems);
+                case GbaStartupMenuPage.StateSave:
+                    detail = "Choose one of eight ROM-specific save slots.";
+                    return new List<string>(model.StateSlots);
+                case GbaStartupMenuPage.StateLoad:
+                    detail = "Choose an existing ROM-specific save slot to load.";
+                    return new List<string>(model.StateSlots);
                 case GbaStartupMenuPage.ControllerMapping:
                     detail = model.IsCapturingController
                         ? $"[  ◀  ●  ▶ ]\n[ D-pad ]  [ A B X Y ]\nTarget: {model.CaptureControl}\nRelease all buttons, then press one. R3 cancels."
@@ -111,6 +122,8 @@ namespace GbaXr
             GbaStartupMenuPage.Settings => "Settings",
             GbaStartupMenuPage.ControllerMapping => "Controller Mapping",
             GbaStartupMenuPage.ViewMode => "View Mode",
+            GbaStartupMenuPage.StateSave => "Save State",
+            GbaStartupMenuPage.StateLoad => "Load State",
             _ => "Parallax Emu"
         };
 
@@ -164,6 +177,18 @@ namespace GbaXr
             Stretch(_controllerReference.rectTransform, .13f, .49f, .87f, .70f, 0f, 0f, 0f, 0f);
             for (var index = 0; index < _cards.Count; index++)
             { var top = .45f - index * .075f; Stretch(_cards[index].rectTransform, .055f, top - .06f, .945f, top, 0f, 0f, 0f, 0f); }
+        }
+
+        private void LayoutStateSlotCards()
+        {
+            for (var index = 0; index < _cards.Count; index++)
+            {
+                var column = index % 2;
+                var row = index / 2;
+                var top = .70f - row * .105f;
+                Stretch(_cards[index].rectTransform, column == 0 ? .055f : .51f, top - .08f,
+                    column == 0 ? .49f : .945f, top, 0f, 0f, 0f, 0f);
+            }
         }
 
         private static Image CreateImage(string name, Transform parent, Color color)

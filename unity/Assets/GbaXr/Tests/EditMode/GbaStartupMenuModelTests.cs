@@ -15,15 +15,15 @@ namespace GbaXr.Tests
         }
 
         [Test]
-        public void Root_HasTheThreeControllerFirstFunctionsInOrder()
+        public void Root_HasTheControllerFirstFunctionsInOrder()
         {
             CollectionAssert.AreEqual(
-                new[] { "Core Selection", "Load ROM", "Settings" },
+                new[] { "Core Selection", "Load ROM", "Save State", "Load State", "Settings" },
                 GbaStartupMenuModel.RootItems);
 
             var model = Open();
             Assert.That(model.Page, Is.EqualTo(GbaStartupMenuPage.Root));
-            Assert.That(model.ItemCount, Is.EqualTo(3));
+            Assert.That(model.ItemCount, Is.EqualTo(5));
         }
 
         [Test]
@@ -34,6 +34,23 @@ namespace GbaXr.Tests
 
             Assert.That(model.Activate(), Is.EqualTo(GbaStartupMenuAction.LoadRom));
             Assert.That(model.Page, Is.EqualTo(GbaStartupMenuPage.Root));
+        }
+
+        [Test]
+        public void StateMenus_ExposeEightSlotsAndRouteActions()
+        {
+            var model = Open();
+            model.Move(2);
+            Assert.That(model.Activate(), Is.EqualTo(GbaStartupMenuAction.OpenStateSave));
+            Assert.That(model.ItemCount, Is.EqualTo(8));
+            model.Move(3);
+            Assert.That(model.SelectedStateSlot, Is.EqualTo(3));
+            Assert.That(model.Activate(), Is.EqualTo(GbaStartupMenuAction.SaveStateSlot));
+            model.Back();
+            model.Move(1);
+            Assert.That(model.Activate(), Is.EqualTo(GbaStartupMenuAction.OpenStateLoad));
+            Assert.That(model.ItemCount, Is.EqualTo(8));
+            Assert.That(model.Activate(), Is.EqualTo(GbaStartupMenuAction.LoadStateSlot));
         }
 
         [Test]
@@ -54,7 +71,7 @@ namespace GbaXr.Tests
         public void Settings_BackPreservesSelectionAndRoutesNestedActions()
         {
             var model = Open();
-            model.Move(2);
+            model.Move(4);
             model.Activate();
             Assert.That(model.Page, Is.EqualTo(GbaStartupMenuPage.Settings));
             model.Move(1);
@@ -68,16 +85,16 @@ namespace GbaXr.Tests
             Assert.That(model.SelectedIndex, Is.EqualTo(1));
             model.Back();
             Assert.That(model.Page, Is.EqualTo(GbaStartupMenuPage.Root));
-            Assert.That(model.SelectedIndex, Is.EqualTo(2));
+            Assert.That(model.SelectedIndex, Is.EqualTo(4));
         }
 
         [Test]
         public void Settings_ExposesAdvancedConsoleButNotAtRoot()
         {
             var model = Open();
-            model.Move(2);
+            model.Move(4);
             model.Activate();
-            model.Move(2);
+            model.Move(GbaStartupMenuModel.RootItems.Length - 1);
 
             Assert.That(model.Activate(), Is.EqualTo(GbaStartupMenuAction.OpenAdvancedConsole));
             Assert.That(model.Page, Is.EqualTo(GbaStartupMenuPage.Settings));
@@ -100,7 +117,7 @@ namespace GbaXr.Tests
                 GbaMappedControl.Start, GbaMappedControl.A, GbaMappedControl.B,
                 GbaMappedControl.L, GbaMappedControl.R }, GbaStartupMenuModel.CalibrationOrder);
             var model = Open();
-            model.Move(2);
+            model.Move(GbaStartupMenuModel.RootItems.Length - 1);
             model.Activate();
             Assert.That(model.Page, Is.EqualTo(GbaStartupMenuPage.Settings));
             model.Activate();

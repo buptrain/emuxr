@@ -71,8 +71,6 @@ namespace GbaXr
             rows.AddRange(new[]
             {
                 "Load ROM…",
-                "Save state · quick slot 0",
-                "Load state · quick slot 0",
                 "Apply changes",
                 "Close"
             });
@@ -85,12 +83,12 @@ namespace GbaXr
                 $"Worker state: {workerState}\n\n" +
                 string.Join("\n\n", rows) +
                 $"\n\nROM selection: {importStatus}\n\n" +
-                $"State slot 0: {stateStatus}\n\n" +
+                $"State status: {stateStatus}\n\n" +
                 (unresolvedDiagnosticPreview
                     ? "WARNING: libretro Core preview is uncertified diagnostic output only. It does not establish parity or Galaxy XR approval.\n\n"
                     : string.Empty) +
                 "D-pad: select/change presentation or placement   A: activate   B: close\n" +
-                "Load ROM opens the Android file picker. Save/load run only on the native worker at a frame boundary.\n" +
+                "Load ROM opens the Android file picker. Save/load slots are available from the Parallax Emu top menu.\n" +
                 "Plane Anchoring: pinch the screen, drag it over a floor or table, then release to attach.\n" +
                 "Hand: pinch with both hands to scale while dragging.\n" +
                 "ForcePartition modes are unsafe visual experiments.\n" +
