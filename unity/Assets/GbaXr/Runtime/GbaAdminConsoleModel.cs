@@ -26,8 +26,6 @@ namespace GbaXr
             GbaAdminOperation.ReloadCurrentRom,
             GbaAdminOperation.LoadStagedRom,
             GbaAdminOperation.ImportRom,
-            GbaAdminOperation.SaveState,
-            GbaAdminOperation.LoadState,
             GbaAdminOperation.SetPresentationMode,
             GbaAdminOperation.SetPlacementMode,
             GbaAdminOperation.ResetScreenTransform
