@@ -33,7 +33,7 @@ namespace GbaXr
         internal int CaptureIndex { get; private set; }
         internal static readonly GbaMappedControl[] CalibrationOrder = Array.ConvertAll(
             EmuControllerInputProfiles.Resolve(EmuCoreFamily.Gba).CalibrationOrder,
-            action => (GbaMappedControl)action);
+            ToGbaMappedControl);
         internal GbaMappedControl CaptureControl => CalibrationOrder[CaptureIndex];
         internal IReadOnlyList<GbaCoreKind> CoreItems => _coreItems;
         internal int ItemCount => Page switch
@@ -133,6 +133,21 @@ namespace GbaXr
             if (CaptureIndex >= 10) { IsCapturingController = false; IsReviewingController = true; _selection[Page] = 0; }
         }
         internal void CancelControllerCapture() { IsCapturingController = false; IsReviewingController = false; CaptureIndex = 0; }
+
+        private static GbaMappedControl ToGbaMappedControl(EmuControllerAction action) => action switch
+        {
+            EmuControllerAction.Up => GbaMappedControl.Up,
+            EmuControllerAction.Right => GbaMappedControl.Right,
+            EmuControllerAction.Down => GbaMappedControl.Down,
+            EmuControllerAction.Left => GbaMappedControl.Left,
+            EmuControllerAction.Select => GbaMappedControl.Select,
+            EmuControllerAction.Start => GbaMappedControl.Start,
+            EmuControllerAction.A => GbaMappedControl.A,
+            EmuControllerAction.B => GbaMappedControl.B,
+            EmuControllerAction.L => GbaMappedControl.L,
+            EmuControllerAction.R => GbaMappedControl.R,
+            _ => throw new ArgumentOutOfRangeException(nameof(action), action, "GBA profile cannot map X or Y.")
+        };
 
         private GbaStartupMenuAction ActivateRoot()
         {
