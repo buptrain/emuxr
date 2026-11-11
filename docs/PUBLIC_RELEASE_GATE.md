@@ -19,7 +19,9 @@ an APK/core release. It is a release-engineering control, not legal advice.
 
 ## mGBA release requirements
 
-- [ ] Publish the exact instrumented mGBA source as a public MPL-2.0 fork/tag.
+- [x] Publish the instrumented mGBA source as the public MPL-2.0 fork
+  [`buptrain/mgba-parallax`](https://github.com/buptrain/mgba-parallax).
+- [ ] Create/publish an immutable source tag for each binary release.
 - [ ] Preserve mGBA/MPL notices and include the MPL-2.0 text.
 - [ ] Record upstream revision, instrumentation commit(s), patch status, NDK,
   CMake, ABI, SHA-256, and reproducible build command for every binary.
@@ -36,7 +38,7 @@ an APK/core release. It is a release-engineering control, not legal advice.
 
 1. `emuxr` — source-only frontend and neutral bridge, with its own chosen
    license and no core checkout/binary.
-2. `emuxr-mgba` — public instrumented mGBA fork, MPL-2.0, tagged source and
-   matching binary release assets.
+2. `buptrain/mgba-parallax` — public instrumented mGBA fork, MPL-2.0, tagged
+   source and matching binary release assets.
 3. Future GPL core forks — separate GPL repositories with their own complete
    source and release obligations.

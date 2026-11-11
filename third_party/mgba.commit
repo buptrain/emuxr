@@ -1,9 +1,15 @@
-mGBA upstream pin
-================
+mGBA Parallax source pin
+========================
 
-Repository: https://github.com/mgba-emu/mgba.git
-Commit: a67176cd3e6bf60a5016d7adc94357142dd12617
-License: Mozilla Public License 2.0 (see the upstream checkout's LICENSE file)
+Instrumented source fork: https://github.com/buptrain/mgba-parallax.git
+Fork commit: 91c4761abb86f74dcc66bac7347f0c4faa6e1540
+Upstream mGBA base: https://github.com/mgba-emu/mgba.git
+Upstream base commit: a67176cd3e6bf60a5016d7adc94357142dd12617
+License: Mozilla Public License 2.0 (see the fork's LICENSE and NOTICE files)
+Release channel: https://github.com/buptrain/mgba-parallax/releases
 
-This file pins the ignored local checkout at third_party/mgba. The checkout itself
-is intentionally not committed into this project.
+This file pins the ignored local checkout at third_party/mgba. Acquire it from
+the instrumented fork, not upstream, when building the direct adapter or a
+release candidate. The checkout itself is intentionally not committed into
+this project. Each distributed binary must name its exact source tag/commit,
+ABI version, and SHA-256 as published by the fork's release contract.

@@ -4,20 +4,22 @@ This repository contains EmuXR frontend, bridge, and test code. It must not
 include commercial ROMs, BIOS files, Unity-generated caches, or a third-party
 core checkout.
 
-## mGBA
+## mGBA Parallax
 
-- Upstream: <https://github.com/mgba-emu/mgba>
-- Pinned source revision: `a67176cd3e6bf60a5016d7adc94357142dd12617`
+- Instrumented source fork: <https://github.com/buptrain/mgba-parallax>
+- Pinned fork revision: `91c4761abb86f74dcc66bac7347f0c4faa6e1540`
+- Upstream mGBA base: <https://github.com/mgba-emu/mgba>
+- Upstream base revision: `a67176cd3e6bf60a5016d7adc94357142dd12617`
 - License: Mozilla Public License 2.0 (MPL-2.0)
 - Local provenance: [`third_party/mgba.commit`](third_party/mgba.commit)
-- Instrumentation delta: [`third_party/mgba-patches/`](third_party/mgba-patches/)
+- Compiled-core releases: <https://github.com/buptrain/mgba-parallax/releases>
 
 The direct adapter and experimental libretro packaging can produce binaries
 that include or depend on mGBA. A distributed binary release must identify the
-matching EmuXR mGBA source-fork tag, provide the MPL-2.0 text and preserved
-notices, and give recipients a reasonable way to obtain the corresponding
-source. The app/frontend license does not alter recipients' MPL rights in the
-covered mGBA files.
+matching `buptrain/mgba-parallax` source tag/commit, provide the MPL-2.0 text
+and preserved notices, and give recipients a reasonable way to obtain the
+corresponding source. The app/frontend license does not alter recipients' MPL
+rights in the covered mGBA files.
 
 ## Libretro
 
