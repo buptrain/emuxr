@@ -74,6 +74,12 @@ namespace GbaXr
             _draft.PlacementMode = placementMode;
         }
 
+        public void SetDraftRequestedCore(GbaCoreKind core)
+        {
+            if (!IsOpen) throw new InvalidOperationException("Open the admin console before editing its draft settings.");
+            _draft.RequestedCore = core;
+        }
+
         public void Request(GbaAdminOperation operation)
         {
             if (!IsOpen)
@@ -108,13 +114,15 @@ namespace GbaXr
     {
         public GbaNativeFrameDriver.PresentationMode PresentationMode;
         public GbaScreenPlacementMode PlacementMode;
+        public GbaCoreKind RequestedCore;
 
         public GbaAdminConsoleSettings Clone()
         {
             return new GbaAdminConsoleSettings
             {
                 PresentationMode = PresentationMode,
-                PlacementMode = PlacementMode
+                PlacementMode = PlacementMode,
+                RequestedCore = RequestedCore
             };
         }
     }

@@ -21,3 +21,12 @@ Create a Quad in the XR scene at `(0, 1.6, 2)` with scale `(1.5, 1, 1)`, then at
 For the checked source-only synthetic fixture, the build script can stage its generated ROM under ignored `Assets/StreamingAssets/gba-fixtures/`. If the persistent file is absent, the driver imports that packaged fixture once using `UnityWebRequest`; it never attempts to load a ROM directly from the Android APK.
 
 Attach this component only after the Android `libgba_xr.so` plug-in has been built and imported at `Assets/Plugins/Android/arm64-v8a/`. Do not place commercial ROMs or BIOS files in the Unity project or source repository.
+
+## Startup menu
+
+`GbaNativeFrameDriver` creates the world-space **Parallax Emu** menu at runtime.
+Set **Rom Relative Path** empty to open it on startup, or press **Xbox R3** while
+a ROM is running. Use D-pad/A/B only. The three root cards are Core Selection,
+Load ROM, and Settings; Advanced Console remains under Settings so R3 always
+opens the startup root. No scene Canvas, EventSystem, raycaster, or button
+binding is required.

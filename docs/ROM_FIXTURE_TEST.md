@@ -2,6 +2,22 @@
 
 `fixtures/gba/frame_sequence.s` is a small, source-only GBA test program. It sets GBA Mode 3 and draws a deterministic red/white 16-pixel checkerboard. It is a visual resolved-frame smoke test, not a game ROM and not a PPU-layer test.
 
+`fixtures/gba/input_state_replay.s` is the fixture-only native parity input and
+state-replay probe. Its top-left 16 × 16 Mode 3 patch starts cyan. It samples
+GBA **A** once at the start of each VBlank and toggles cyan/magenta on a rising
+edge. It clears the complete Mode 3 framebuffer under forced blank before
+enabling display, so all resolved pixels are deterministic. The stage and
+prior-button latch live in emulated EWRAM, not CPU registers; it uses no DMA,
+IRQ, BIOS, or external data. The parity runner first discards two released-key
+startup frames, performs an unobserved stable A press then release to establish
+the canonical pre-trace stage, and repeats only the released-key drain after a
+state load. It holds each logical script mask through two emulated frames and
+hashes the second, then the script `0,1,0` ends cyan after the canonical stage
+after reset; repeating it after a checkpoint advances to magenta. Loading that
+checkpoint and replaying the same script must produce the same magenta resolved
+frame hash. These stage/hash relationships are the contract; there is no
+approved single-core golden hash yet and no commercial asset is involved.
+
 `fixtures/gba/bg0_priority.s` is the first provenance and raw-candidate contract fixture. It sets Mode 0 BG0 to priority 2 and fills it with one opaque cyan text tile. Every output pixel must have final source BG0 (`1`), priority `2`, blend `0`, and RGBA `00FFFFFF`. It is the only fixture eligible for the first `INDEPENDENT_CANDIDATES` lease: its raw BG0 color/mask must fully and byte-exactly recompose the resolved frame. It does not yet test priority ties, OBJ, or windows.
 
 `fixtures/gba/bg_tie.s` is the second provenance fixture. BG0 and BG1 both have priority 2. BG0's opaque cyan left half must win the equal-priority overlap; its transparent right half exposes BG1's magenta pixels. This tests both equal-priority tie behavior and BG1 source attribution.
@@ -44,6 +60,12 @@ Build the BG0 provenance fixture instead:
 & .\fixtures\gba\build.ps1 -Fixture bg0_priority
 ```
 
+Build the parity input/state fixture:
+
+```powershell
+& .\fixtures\gba\build.ps1 -Fixture input_state_replay
+```
+
 ## Package and install on Galaxy XR
 
 Build and copy the fixture into Unity's ignored `StreamingAssets` staging directory:
@@ -65,8 +87,29 @@ Restart the app. The driver should replace the dark diagnostic frame with the fi
 ## Pass/fail
 
 - Pass: a stable full-frame red/white checkerboard appears; orientation is consistent with the surface; the app stays running for at least 60 seconds.
-- Pass: after the fifth presented frame, Unity logs `synthetic fixture golden hash verified: 0x9B341219`. This is the pinned mGBA resolved-frame golden captured on Galaxy XR; it is separate from the source-model fixture hash used by the EditMode test.
-- Fail: the old dark diagnostic frame remains, the surface is blank, colors are incorrect, a native error is logged, or the app exits.
+- Pass: after the **30th** presented frame, Unity logs `synthetic fixture golden hash verified: 0xF9838FC5`. This is the confirmed physical-device resolved-frame contract and matches the source-model checkerboard hash.
+- Fail: the old dark diagnostic frame remains, the surface is blank, colors are incorrect, a native error is logged, or the app exits. If the historical golden hash fails, the direct driver now appends a **Source diagnostic** containing a full-frame mismatch count, first coordinate/expected/actual RGBA, and canonical candidate hashes. Capture that complete line before changing a golden: four correct corner samples do not establish full-frame parity.
+
+### Direct temporal evidence sweep (opt-in)
+
+For a direct-versus-libretro timing comparison, select the Quad containing
+**Gba Native Frame Driver** in Unity, keep **Rom Relative Path** set to
+`gba-fixtures/frame_sequence.gba`, and enable **Enable Synthetic Fixture
+Temporal Sweep**. It is disabled by default. The direct core still makes its
+normal 30th-lease `0xF9838FC5` golden decision; the setting only adds these
+three later diagnostic lines:
+
+```text
+GBA XR: synthetic fixture direct temporal sweep: lease=30/hash=.../mismatches=.../first=(x,y)/expected=.../actual=.../candidate=...
+GBA XR: synthetic fixture direct temporal sweep: lease=60/...
+GBA XR: synthetic fixture direct temporal sweep: lease=120/...
+```
+
+Run the adapter certification batch against the exact same packaged fixture and
+compare those fields to its `temporalSweep=` terminal value. The sweep never
+runs for any other ROM path, never changes certification evidence or a golden,
+and is automatically armed only when this fixture's existing direct-golden
+diagnostic fails.
 
 Do not use commercial ROMs or BIOS images for this test.
 

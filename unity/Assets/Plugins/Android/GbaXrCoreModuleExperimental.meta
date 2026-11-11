@@ -1,0 +1,8 @@
+fileFormatVersion: 2
+guid: b49f1e3d519348c1a7a4dd70f24e66a3
+folderAsset: yes
+DefaultImporter:
+  externalObjects: {}
+  userData: Experimental fixed-host loadable-core package. Default-off probe only; never selects the runtime core.
+  assetBundleName: 
+  assetBundleVariant: 

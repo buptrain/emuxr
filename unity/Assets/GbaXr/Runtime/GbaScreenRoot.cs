@@ -20,16 +20,28 @@ namespace GbaXr
         private Vector3 _virtualLocalPosition;
         private Quaternion _virtualLocalRotation;
         private Vector3 _virtualLocalScale;
+        private bool _virtualTransformCaptured;
         private GbaPlaneAnchorController _planeAnchorController;
 
         public GbaScreenPlacementMode PlacementMode => placementMode;
 
         private void Awake()
         {
+            CaptureVirtualTransform();
+        }
+
+        private void CaptureVirtualTransform()
+        {
+            if (_virtualTransformCaptured)
+            {
+                return;
+            }
+
             _virtualParent = transform.parent;
             _virtualLocalPosition = transform.localPosition;
             _virtualLocalRotation = transform.localRotation;
             _virtualLocalScale = transform.localScale;
+            _virtualTransformCaptured = true;
         }
 
         public void SetPlacementMode(GbaScreenPlacementMode mode)
@@ -53,6 +65,7 @@ namespace GbaXr
         /// </summary>
         internal void AttachToAnchor(Transform anchorTransform, float bottomToPivotOffsetMeters)
         {
+            CaptureVirtualTransform();
             var scale = transform.localScale;
             transform.SetParent(anchorTransform, false);
             transform.localPosition = Vector3.up * bottomToPivotOffsetMeters;
@@ -84,15 +97,24 @@ namespace GbaXr
 
         internal void SetUniformScale(float multiplier)
         {
+            CaptureVirtualTransform();
             transform.localScale = _virtualLocalScale * multiplier;
         }
 
-        internal float UniformScale => _virtualLocalScale.y > 0f
-            ? transform.localScale.y / _virtualLocalScale.y
-            : 1f;
+        internal float UniformScale
+        {
+            get
+            {
+                CaptureVirtualTransform();
+                return _virtualLocalScale.y > 0f
+                    ? transform.localScale.y / _virtualLocalScale.y
+                    : 1f;
+            }
+        }
 
         internal void RestoreVirtualFieldTransform()
         {
+            CaptureVirtualTransform();
             transform.SetParent(_virtualParent, false);
             transform.localPosition = _virtualLocalPosition;
             transform.localRotation = _virtualLocalRotation;

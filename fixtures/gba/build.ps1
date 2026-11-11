@@ -1,6 +1,6 @@
 param(
     [string]$ToolchainBin = "C:\Program Files\Unity\Hub\Editor\6000.3.12f1\Editor\Data\PlaybackEngines\AndroidPlayer\NDK\toolchains\llvm\prebuilt\windows-x86_64\bin",
-    [ValidateSet("frame_sequence", "bg0_priority", "bg_tie", "obj_priority", "alpha_blend", "brighten", "darken", "window_alpha", "affine_bg2", "obj_alpha")]
+    [ValidateSet("frame_sequence", "input_state_replay", "bg0_priority", "bg_tie", "obj_priority", "alpha_blend", "brighten", "darken", "window_alpha", "affine_bg2", "obj_alpha")]
     [string]$Fixture = "frame_sequence",
     [string]$StreamingAssetName,
     [switch]$InstallIntoUnityStreamingAssets

@@ -1,0 +1,12 @@
+{
+  "schema": "gba-xr.experimental-core-module-package/v1",
+  "experimental": true,
+  "runtimeSelection": "disabled",
+  "android": { "abi": "arm64-v8a", "minimumApiLevel": 24, "requiredLoadAlignment": "0x4000", "moduleLoad": "installed-bare-soname-only" },
+  "directPluginIntegrity": { "path": "../../arm64-v8a/libgba_xr.so", "sha256": "8A220BA2A3637E141802928A832C1A61702F7A04BBF839B64A3A062F4BFD0C9A" },
+  "artifacts": [
+    { "path": "libemuxr_core_host.so", "sha256": "A4EA423CCB91825A70254C80BACB4679F4FFB16B6A9A99B40870C59A298D9C00", "soname": "libemuxr_core_host.so", "role": "fixed P/Invoke host" },
+    { "path": "emuxr_mgba_libretro_core.so", "sha256": "72F1120EFF371D00F01275DD1C39C10CFFD9D5358A80A40B7AA3D2BB62FE0C6C", "soname": "emuxr_mgba_libretro_core.so", "role": "installed module resolved by bare soname" }
+  ],
+  "safety": { "activeDriverChanged": false, "readinessWritten": false, "verificationCommand": "native/tools/verify_unity_core_module_package.ps1" }
+}

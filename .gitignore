@@ -1,6 +1,8 @@
 # Native build products
 /build/
 /native/build/
+/native/build-*/
+/release-staging/
 
 # Unity generated state
 /unity/[Ll]ibrary/

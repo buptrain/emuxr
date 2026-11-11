@@ -48,9 +48,13 @@ namespace GbaXr
             // derive a stable non-path key, so no user-provided filename is
             // ever interpreted as a state directory.
             const string contentPrefix = "sha256:";
-            if (romIdentity.StartsWith(contentPrefix, StringComparison.Ordinal) &&
-                romIdentity.Length == contentPrefix.Length + 64)
+            if (romIdentity.StartsWith(contentPrefix, StringComparison.Ordinal))
             {
+                if (romIdentity.Length != contentPrefix.Length + 64)
+                {
+                    return null;
+                }
+
                 var hash = romIdentity.Substring(contentPrefix.Length);
                 for (var index = 0; index < hash.Length; index++)
                 {

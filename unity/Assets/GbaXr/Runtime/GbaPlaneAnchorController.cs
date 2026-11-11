@@ -39,7 +39,6 @@ namespace GbaXr
         private GameObject _surfaceHighlightObject;
         private LineRenderer _surfaceHighlight;
         private Camera _camera;
-        private bool _scanning;
         private bool _permissionRequestInFlight;
         private bool _arComponentsInitialized;
         private int _draggingHandDeviceId = -1;
@@ -417,7 +416,6 @@ namespace GbaXr
             RemoveAnchor(oldAnchor);
             _hasPreviewPose = false;
             _previewPlane = null;
-            _scanning = false;
             _planeManager.enabled = false;
             _raycastManager.enabled = false;
             HideSurfaceHighlight();
@@ -476,7 +474,6 @@ namespace GbaXr
 
         public void ReturnToVirtualField()
         {
-            _scanning = false;
             if (_planeManager != null) _planeManager.enabled = false;
             if (_raycastManager != null) _raycastManager.enabled = false;
             if (_cameraManager != null) _cameraManager.enabled = false;
@@ -590,7 +587,6 @@ namespace GbaXr
             _cameraManager.enabled = true;
             _planeManager.enabled = true;
             _raycastManager.enabled = true;
-            _scanning = true;
             Debug.Log("GBA XR: surface scan enabled. Pinch the screen, drag it over a detected floor or table, then release to attach.");
         }
 

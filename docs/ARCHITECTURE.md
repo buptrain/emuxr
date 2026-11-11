@@ -66,6 +66,110 @@ The current renderer displays the resolved texture on a single world-space surfa
 
 The public native contract is [gba_xr_bridge.h](../native/include/gba_xr_bridge.h). It is deliberately small and C-compatible. `native/src/mgba_adapter.c` is the only code that is allowed to include both mGBA headers and this bridge header.
 
+## Multi-core refactor seam
+
+The working direct-mGBA path remains the production path while the project
+introduces a libretro-compatible core host. The first slice is
+[`emuxr_libretro_host.h`](../native/include/emuxr_libretro_host.h): a small
+frontend function table that owns standard libretro callbacks, converts the
+three software video formats to transient RGBA8, offers a controller mailbox,
+and forwards serialization and PCM batches to host-owned sinks.
+
+It is intentionally separate from `gba_xr_bridge.h`. That bridge is ABI v3
+and has fixed 240 × 160 lease slots; widening it for arbitrary core geometry
+is a later ABI-v4 task. The libretro host therefore has no GBA dimensions and
+does not know Unity. The temporary
+[`emuxr_gba_bridge_sink`](../native/include/emuxr_gba_bridge_sink.h) copies
+only matching 240 × 160 resolved RGBA8 frames into the existing bridge without
+making SNES/DS semantics look like GBA.
+
+```text
+libretro core (one worker) -> emuxr_libretro_host -> resolved RGBA8 sink
+                                                     -> current GBA bridge
+                                                     -> Unity
+```
+
+The standard libretro route is resolved video, audio, input, content, and
+state only. Layer provenance and 2.5D candidate planes remain optional
+core-specific composition providers, negotiated above the standard host. A
+core that has no provider is correct by presenting `ResolvedOnly`.
+
+`GbaCoreSelectionPolicy` is a managed launch-policy seam, not an exposed
+runtime switch. A request for the optional libretro route falls back to direct
+mGBA unless all five gates are recorded: packaged Unity binding,
+resolved-frame parity, input parity, audio parity, and save-state parity. The
+current app always requests direct mGBA, so a native build artifact alone can
+never change device behavior.
+
+The first concrete provider is optional mGBA libretro support. Configure with
+`-DGBAXR_BUILD_MGBA_LIBRETRO_CORE=ON` to build the pinned mGBA libretro core
+and [`emuxr_mgba_libretro_provider`](../native/include/emuxr_mgba_libretro_provider.h).
+It supplies the standard entry points to the generic host and intentionally
+has no PPU metadata path yet. Its isolated Android ARM64 dependency pair is
+packaged behind an experimental Unity gate, but it is not selected by the
+current direct-mGBA worker until resolved-frame, audio, input, and state
+equivalence plus device certification are demonstrated.
+
+That option also builds `libemuxr_mgba_libretro.so`, an isolated experimental
+adapter shared library. Its only adapter-specific public entry points are in
+[`emuxr_mgba_libretro_adapter.h`](../native/include/emuxr_mgba_libretro_adapter.h):
+opaque create/start/stop/destroy, joypad, PCM, state, and an adapter-owned
+frame acquire/release facade. It links the generic GBA libretro worker to the
+pinned mGBA libretro provider; the public wrapper exposes no libretro or mGBA
+headers. The underlying `gbaxr_context` is intentionally private: a future
+Unity P/Invoke binding must acquire and release through this same shared
+object, never pass its context to `gbaxr_*` symbols from `libgba_xr.so`.
+The libretro adapter binds its private bridge references locally and hides its
+static bridge/worker/provider symbols, leaving only adapter-specific exports.
+It is not copied to Unity, not selectable, and does not change `libgba_xr.so`.
+
+### Native parity harness
+
+When **both** native backends are configured, the build also produces the
+fixture-only `emuxr_mgba_parity_runner`. It runs direct mGBA first, destroys
+that session, then creates a fresh mGBA-libretro session; this ordering avoids
+the libretro host's process-global callback state. The runner consumes leases
+on one thread, copies only resolved RGBA pixels before hashing, and emits one
+`EMUXR_PARITY_V1` JSON result. Its bounded, GBA-order mask-per-frame script is
+translated at the libretro boundary and is executed against fresh direct then
+libretro sessions. `input_state_replay.gba` samples one input at VBlank and
+stores its stage/latch in emulated RAM; `0,1,0` visibly toggles a small
+cyan/magenta patch. The runner discards two released-key startup frames, then
+records initial script hashes; it repeats that released-key drain after load so
+the replay cannot consume a queued pre-load lease. Each logical mask spans two
+emulation frames and only the stable second frame is hashed. Before this first
+trace only, an unobserved A press/release canonicalizes fixture state; replay
+does not repeat it after load. It then records 48 kHz output-rate, a
+first-pixel RGBA diagnostic, PCM counters/hash, and invalid/save/load statuses;
+then it
+checkpoints each backend, advances the script, loads its own state, and
+requires its replayed resolved-frame hash to equal the pre-load frame before
+comparing the final replayed frame across backends. It never compares PCM or
+state blobs as byte-equivalence claims. One absolute deadline spans both
+sessions, and the JSON reason distinguishes init, frame, and replay failures.
+
+The executable accepts only a caller-supplied UTF-8 **synthetic/homebrew
+fixture path** and a disposable writable state directory. It embeds no ROM,
+never receives commercial content from the project, and requires separately
+authorized ADB execution.
+
+The mGBA libretro provider explicitly selects a conversion profile only for
+its standard RGB565 output. mGBA has already converted GBA BGR555 to standard
+RGB565, so red/blue retain normal RGB565 positions. Its sixth green bit is a
+duplicate of the source GBA five-bit green MSB; the profile restores that
+five-bit value before 8-bit expansion to match direct mGBA. Generic libretro
+RGB565 retains its normal six-bit-green conversion.
+
+`emuxr_gba_libretro_worker` is the next seam: it owns one libretro host on a
+native producer thread, uses the current bridge only for exact 240 × 160
+resolved GBA frames, queues 48 kHz PCM, and performs serialize operations at a
+completed-frame boundary. It is likewise not connected to Unity yet. The
+worker-owned `emuxr_pcm_resampler` converts each core's source-rate stereo
+batches before they reach its bounded ring; the original source rate remains
+available only as diagnostic telemetry. This gives the future generic Unity
+binding the same fixed-rate contract as the direct-mGBA path without letting
+Unity call a core or own resampler state.
+
 ## Runtime lifecycle
 
 ### Startup
@@ -265,7 +369,7 @@ Fixtures are small source-only ARM7TDMI programs under [fixtures/gba](../fixture
 
 | Fixture | Behavior under test | Status |
 | --- | --- | --- |
-| `frame_sequence` | Mode 3 BG2 resolved-frame path, texture upload, and baseline provenance probe | Approved resolved hash `0x9B341219` on the pinned device/core configuration |
+| `frame_sequence` | Mode 3 BG2 resolved-frame path, texture upload, and baseline provenance probe | Approved resolved hash `0xF9838FC5` at settled lease 30 on the pinned device/core configuration |
 | `bg0_priority` | Opaque Mode 0 BG0, source `1`, priority `2`, no blend, cyan output | Approved full-frame hash `0x87A1ADC5` |
 | `bg_tie` | Equal-priority BG0/BG1 tie rule; BG0 cyan left half wins while transparent BG0 exposes magenta BG1 on the right | Approved full-frame hash `0x0BB5FDC5` |
 | `obj_priority` | Equal-priority OBJ/BG0 tie rule; a 64 × 64 magenta OBJ wins over cyan BG0 | Approved full-frame hash `0xEBBEADC5` |

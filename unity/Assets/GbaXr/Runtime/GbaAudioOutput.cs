@@ -125,7 +125,7 @@ namespace GbaXr
     }
 
     /// <summary>
-    /// Pulls worker-owned, 48 kHz stereo PCM into Unity's direct audio-filter
+    /// Pulls backend-owned, 48 kHz stereo PCM into Unity's direct audio-filter
     /// callback. A long silent clip keeps the 2D AudioSource alive, but never
     /// supplies emulation PCM. The callback performs no Unity API calls,
     /// locks, logging, or managed allocations.
@@ -145,6 +145,7 @@ namespace GbaXr
         private GCHandle _pinnedScratch;
         private IntPtr _pinnedScratchPointer;
         private long _workerHandle;
+        private int _workerBackend;
         private int _callbacksInFlight;
         private long _underflowFrames;
         private long _streamingCallbackCount;
@@ -227,11 +228,12 @@ namespace GbaXr
             }
         }
 
-        internal void AttachWorker(IntPtr worker)
+        internal void AttachWorker(IntPtr worker, GbaNativeSessionBackend backend)
         {
             DetachWorker();
             ResetReadStateAfterCallbacksStopped();
             RefreshCachedOutputSampleRate();
+            Volatile.Write(ref _workerBackend, (int)backend);
             Interlocked.Exchange(ref _workerHandle, worker.ToInt64());
             EnsureStreamingSourcePlaying();
         }
@@ -282,6 +284,7 @@ namespace GbaXr
         internal void DetachWorker()
         {
             Interlocked.Exchange(ref _workerHandle, 0L);
+            Volatile.Write(ref _workerBackend, (int)GbaNativeSessionBackend.DirectMgba);
             while (Volatile.Read(ref _callbacksInFlight) != 0)
             {
                 Thread.Yield();
@@ -289,18 +292,18 @@ namespace GbaXr
             ResetReadStateAfterCallbacksStopped();
         }
 
-        internal void UpdateNativeDiagnostics(uint availableFrames, uint mgbaSourceSampleRate, ulong droppedFrames)
+        internal void UpdateNativeDiagnostics(uint availableFrames, uint sourceSampleRate, ulong droppedFrames)
         {
-            if (mgbaSourceSampleRate != 0U && mgbaSourceSampleRate != _lastMgbaSourceSampleRate)
+            if (sourceSampleRate != 0U && sourceSampleRate != _lastMgbaSourceSampleRate)
             {
-                Debug.Log($"GBA XR audio: mGBA mixer is {mgbaSourceSampleRate} Hz; worker resamples stereo PCM to 48000 Hz.");
-                _lastMgbaSourceSampleRate = mgbaSourceSampleRate;
+                Debug.Log($"GBA XR audio: native worker source cadence is {sourceSampleRate} Hz; worker resamples stereo PCM to 48000 Hz.");
+                _lastMgbaSourceSampleRate = sourceSampleRate;
             }
             if (droppedFrames != _lastDroppedFrames)
             {
                 Debug.LogWarning(
                     $"GBA XR audio: native ring dropped {droppedFrames - _lastDroppedFrames} frame(s); " +
-                    $"available={availableFrames}, source={mgbaSourceSampleRate} Hz.");
+                    $"available={availableFrames}, source={sourceSampleRate} Hz.");
                 _lastDroppedFrames = droppedFrames;
             }
         }
@@ -450,10 +453,9 @@ namespace GbaXr
             if (_scratchFrameIndex >= _scratchFramesAvailable)
             {
                 Interlocked.Add(ref _nativePcmFramesRequested, ScratchFrames);
-                _scratchFramesAvailable = (int)GbaNativeBindings.gbaxr_mgba_worker_read_audio_pcm_s16(
-                    worker,
-                    _pinnedScratchPointer,
-                    ScratchFrames);
+                _scratchFramesAvailable = Volatile.Read(ref _workerBackend) == (int)GbaNativeSessionBackend.LibretroAdapter
+                    ? (int)GbaLibretroNativeBindings.ReadAudioPcmS16(worker, _pinnedScratchPointer, ScratchFrames)
+                    : (int)GbaNativeBindings.gbaxr_mgba_worker_read_audio_pcm_s16(worker, _pinnedScratchPointer, ScratchFrames);
                 _scratchFrameIndex = 0;
                 Interlocked.Add(ref _nativePcmFramesPulled, _scratchFramesAvailable);
                 if (_scratchFramesAvailable == 0)

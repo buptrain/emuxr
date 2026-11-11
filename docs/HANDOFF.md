@@ -82,7 +82,32 @@ Update: a pinned upstream checkout and first resolved-frame adapter now exist. S
 
 `GbaTestFrameSurface` is new and has **not** yet been deployed to the headset. It is the next device test.
 
-The Android `arm64-v8a` native plug-in builds at `build/android-arm64/libgba_xr.so` and is copied to `unity/Assets/Plugins/Android/arm64-v8a/libgba_xr.so`. The resolved-frame path is validated on physical Galaxy XR with the synthetic Mode 3 fixture. Its mGBA worker owns the producer thread, while Unity owns consumer leases. The pinned on-device resolved-frame hash is `0x9B341219` for the recorded mGBA revision.
+The Android `arm64-v8a` native plug-in builds at `build/android-arm64/libgba_xr.so` and is copied to `unity/Assets/Plugins/Android/arm64-v8a/libgba_xr.so`. The resolved-frame path is validated on physical Galaxy XR with the synthetic Mode 3 fixture. Its mGBA worker owns the producer thread, while Unity owns consumer leases. The confirmed on-device resolved-frame hash is `0xF9838FC5` at settled lease 30 for the recorded mGBA revision.
+
+## Parallax Emu startup menu
+
+`GbaNativeFrameDriver` now creates the **Parallax Emu** world-space startup
+menu at runtime; no scene Canvas or EventSystem is required. It uses only
+controller input and does not rely on raycasts. For the blank-ROM startup flow,
+set the driver component's **Rom Relative Path** to empty in
+`Prototype.unity`; the menu opens instead of the advanced console. With a ROM
+running, press **Xbox R3** to open the same root menu.
+
+- **D-pad** moves the selection; **A** confirms; **B** backs out.
+- Root options are **Core Selection**, **Load ROM**, and **Settings**.
+- **Load ROM** invokes the existing Android document picker; a successful
+  import follows the existing explicit safe launch path.
+- **Settings** contains fixed controller-map information, **View Mode**
+  (Virtual Field or Plane Anchoring), and the separate **Advanced Console**.
+- Core selection is an explicit A-confirmed transaction. Direct mGBA is always
+  available; the experimental libretro core is shown only when the existing
+  readiness policy permits it. An active worker is restarted only on that
+  confirmation path.
+
+The menu is a child of the Quad/driver and appears automatically after script
+reimport. Do not add a second menu component or a Graphic Raycaster. Keep
+`GbaLibretroDiagnosticPreview` disabled unless deliberately conducting its
+separate fixture-only experiment.
 
 ## Immediate next steps
 

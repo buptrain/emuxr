@@ -4,7 +4,101 @@ This is the working backlog for the Samsung Galaxy XR proof of concept. A
 checked item has implementation and contract, fixture, or device evidence; it
 does not by itself mean production readiness.
 
+Controller mapping now has a profile-owned state contract for a future NDS
+core. An NDS worker must resolve `EmuCoreFamily.Nds`, load its own v2 mapping
+namespace, and translate that profile's actions; no NDS core or launcher entry
+is enabled by this preparation.
+
+The future NDS startup seam is:
+`EmuProfileMappingState.Load(EmuControllerInputProfiles.Nds, EmuPlayerPrefsMappingStore.Instance)`.
+It must remain separate from the active direct-mGBA v1 map until an NDS core is
+actually integrated.
+
 ## Status snapshot
+
+- [x] **Fixed-host preparation:** A resolver-injected, fail-closed libretro
+  core-module loader now validates the complete standard `retro_*` surface,
+  optional core descriptor, expected core ID, and safe unload lifecycle in
+  native contract tests. It deliberately has no Android `dlopen` backend or
+  runtime selection yet; downloaded developer ZIPs remain data only.
+- [ ] **Fixed-host module delivery:** Split the experimental static adapter
+  into a Unity-facing fixed host and `libmgba_parallax_libretro.so`; prove an
+  Android-recognized installed-library loader path, then validate a synthetic
+  load/run/unload/reload sequence on Galaxy XR. Keep Play Feature Delivery
+  separate from the developer archive path.
+- [x] **Foundation:** A dependency-free libretro-compatible host contract now
+  owns standard callback wiring, CPU video conversion, input mailbox, audio
+  sink, and serialize/unserialize delegation. It is covered by a fake-core
+  contract test and does not yet replace the direct-mGBA device path.
+- [x] **Foundation:** The pinned mGBA libretro core can now be built behind an
+  explicit opt-in CMake flag and supplies its standard entry points through
+  the generic host. It is resolved-frame-only and remains outside the Unity
+  package until an actual mGBA parity run is approved.
+- [x] **Foundation:** The opt-in build also emits a separate
+  `libemuxr_mgba_libretro.so` adapter with opaque lifecycle, joypad, PCM,
+  state, and bridge calls. It is packaged only as a controlled experimental
+  Android ARM64 pair with its `mgba_libretro.so` dependency; it is neither
+  selectable nor a replacement for `libgba_xr.so`.
+- [x] **Foundation:** A build-only Android ARM64 parity runner now starts the
+  direct and libretro paths sequentially against a caller-supplied synthetic
+  fixture, compares copied resolved-frame hashes after a bounded input script,
+  and verifies each backend's own checkpoint/load/replay behavior before
+  comparing the replay result across paths. `input_state_replay` supplies the
+  source-controlled visible A-button transition; the 48 kHz contract remains
+  mandatory. It has not been ADB-executed, does not accept project ROM content,
+  and does not claim PCM or save-state blob byte equivalence.
+- [x] **Foundation:** A GBA-sized generic libretro worker now owns the core
+  thread, resolved bridge sink, input mailbox, 48 kHz PCM ring, and state
+  serialization boundary. Its source-rate resampler and fake-core contract
+  verify frame, input, audio, and state-boundary behavior. Unity still uses
+  the direct-mGBA worker; this seam exists for parity testing, not runtime
+  selection.
+- [x] **Foundation:** A managed core-selection policy fails closed to direct
+  mGBA until the libretro Unity binding and resolved-frame, input, audio,
+  state, and Galaxy XR device parity gates are certified. Its console setting
+  is intentionally hidden until that persisted certification is complete.
+- [x] **Preparation:** The Unity P/Invoke surface targets only the isolated
+  `emuxr_mgba_libretro_adapter_*` lifecycle/input/audio/state/frame facade.
+  A controlled Android ARM64 experimental package now includes the adapter and
+  its `mgba_libretro.so` dependency with 16 KB metadata and artifact checks.
+  The launch policy still requires all parity gates and explicit Galaxy XR
+  device certification before it can select libretro.
+- [x] **Preparation:** A default-off `GbaLibretroSmokeProbe` can validate only
+  Android loading plus adapter create/destroy on an authorized Development
+  headset build. It starts no ROM and is not a parity/certification result or
+  a selectable runtime route.
+- [x] **Preparation:** A separate default-off `GbaLibretroFixtureFrameProbe`
+  starts only the SHA-256-pinned generated `frame_sequence` fixture, validates
+  and releases one 240 × 160 RGBA8 adapter lease, then destroys the adapter.
+  It has no texture/audio/input/state/console path. It records only its own
+  persisted evidence flag and remains insufficient for runtime selection or
+  device certification.
+- [x] **Controlled switch preparation:** The runtime now uses a backend-owned
+  native-session boundary for direct mGBA or the isolated libretro adapter.
+  Direct mGBA remains the default/fallback. The admin Core row remains hidden
+  until persisted fixture, resolved-frame, input, audio, state, and Galaxy XR
+  certification evidence is complete; current evidence does not meet that
+  gate. The experimental route is resolved-frame only (no 2.5D provenance
+  reuse across native backends).
+- [x] **Batch-ready validation:** A separate default-off
+  `GbaLibretroCertificationBatchProbe` uses only SHA-pinned synthetic fixtures
+  to validate a resolved-frame baseline, stable input-visible change, 48 kHz
+  adapter PCM availability, and adapter-owned save/load visual replay. It
+  settles 30 post-running leases before the CPU-filled `frame_sequence`
+  canonical `0xF9838FC5` hash; remaining mismatch output includes a source-pattern full-frame color/
+  alpha/row-orientation diagnostic. It persists only successful individual
+  evidence and never records the final `GalaxyXrDevice` approval; device/log
+  review remains required.
+- [x] **Diagnostic-only preview:** A default-off
+  `GbaLibretroDiagnosticPreview` component can temporarily expose the packaged
+  libretro resolved-frame Core choice before certification. It carries a
+  visible unresolved warning, writes no readiness flags, keeps direct mGBA as
+  startup/failure fallback, and must be removed/disabled after visual review.
+- [x] **Preview input/audio repair:** The adapter session translates direct GBA
+  key bits to mGBA libretro RetroPad IDs (notably Up/Down → IDs 4/5), while its
+  worker rescales nominal mGBA audio cadence for the fixed 60 FPS frontend and
+  honors core AV-rate-change callbacks. This prevents the prior direction
+  rotation and growing PCM backlog; device review remains required.
 
 - [x] **Done:** Native mGBA adapter behind an engine-independent C ABI,
   worker-owned emulation thread, frame leases, and a resolved RGBA fallback.
@@ -176,6 +270,14 @@ display.
 screen on a floor or table, while VirtualField remains available.
 
 ## P3 — quality, device validation, and release readiness
+
+- [x] **Developer-only external core registry:** `GbaDeveloperCoreReleaseProvider`
+  can fetch an explicit HTTPS GitHub Release manifest, SHA-256-verify and stage
+  its archive under app-private versioned storage, atomically select an active
+  descriptor, and retain the prior descriptor for rollback. It is disabled
+  outside explicit development/sideload builds and reports
+  `DownloadedNotLoadable`: current Unity host bridges/core adapters are static
+  native libraries and must never be replaced or dynamically loaded at runtime.
 
 - [ ] Run Unity EditMode tests in a licensed editor; add PlayMode smoke tests
   for frame upload, leases, console, input, storage, audio, and placement.

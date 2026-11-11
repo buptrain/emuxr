@@ -8,7 +8,9 @@
 int main(void) {
   static uint8_t resolved[GBAXR_GBA_WIDTH * GBAXR_GBA_HEIGHT * 4U];
   static gbaxr_pixel_provenance provenance[GBAXR_GBA_WIDTH * GBAXR_GBA_HEIGHT];
-  gbaxr_visible_partition partition;
+  /* The six full-resolution color planes and masks exceed the default
+   * Windows test-process stack. Keep this fixture static like its input. */
+  static gbaxr_visible_partition partition;
 
   memset(resolved, 0, sizeof(resolved));
   memset(provenance, 0, sizeof(provenance));

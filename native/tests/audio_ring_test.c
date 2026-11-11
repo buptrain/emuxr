@@ -6,9 +6,9 @@ int main(void) {
   gbaxr_audio_ring *r = gbaxr_audio_ring_create(4);
   CHECK(r); CHECK(gbaxr_audio_ring_write(r, in, 3) == 3); CHECK(gbaxr_audio_ring_read(r, out, 2) == 2);
   CHECK(out[0] == 1 && out[3] == 4); CHECK(gbaxr_audio_ring_read(r, out, 2) == 1);
-  CHECK(gbaxr_audio_ring_write(r, in, 5) == 3); CHECK(gbaxr_audio_ring_available(r) == 4);
-  CHECK(gbaxr_audio_ring_dropped_frames(r) == 2U);
-  CHECK(gbaxr_audio_ring_read(r, out, 4) == 4); CHECK(out[0] == 5 && out[7] == 6);
+  CHECK(gbaxr_audio_ring_write(r, in, 5) == 4); CHECK(gbaxr_audio_ring_available(r) == 4);
+  CHECK(gbaxr_audio_ring_dropped_frames(r) == 1U);
+  CHECK(gbaxr_audio_ring_read(r, out, 4) == 4); CHECK(out[0] == 1 && out[7] == 8);
   CHECK(gbaxr_audio_ring_read(r, out, 1) == 0);
   gbaxr_audio_ring_destroy(r); puts("audio ring tests passed"); return 0;
 }

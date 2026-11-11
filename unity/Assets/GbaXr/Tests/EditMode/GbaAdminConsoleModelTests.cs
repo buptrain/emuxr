@@ -18,7 +18,8 @@ namespace GbaXr.Tests
             return new GbaAdminConsoleModel(new GbaAdminConsoleSettings
             {
                 PresentationMode = GbaNativeFrameDriver.PresentationMode.Auto,
-                PlacementMode = GbaScreenPlacementMode.VirtualField
+                PlacementMode = GbaScreenPlacementMode.VirtualField,
+                RequestedCore = GbaCoreKind.DirectMgba
             });
         }
 
@@ -50,6 +51,23 @@ namespace GbaXr.Tests
 
             Assert.That(console.Active.PresentationMode, Is.EqualTo(GbaNativeFrameDriver.PresentationMode.ForcePartition));
             Assert.That(console.Active.PlacementMode, Is.EqualTo(GbaScreenPlacementMode.PlaneAnchoring));
+        }
+
+        [Test]
+        public void RequestedCore_IsTransactionalLikeOtherConsoleSettings()
+        {
+            var console = CreateConsole();
+            console.Open();
+
+            console.SetDraftRequestedCore(GbaCoreKind.LibretroResolvedExperimental);
+
+            Assert.That(console.Active.RequestedCore, Is.EqualTo(GbaCoreKind.DirectMgba));
+            Assert.That(console.Draft.RequestedCore, Is.EqualTo(GbaCoreKind.LibretroResolvedExperimental));
+
+            var transaction = console.Apply();
+
+            Assert.That(transaction.Settings.RequestedCore, Is.EqualTo(GbaCoreKind.LibretroResolvedExperimental));
+            Assert.That(console.Active.RequestedCore, Is.EqualTo(GbaCoreKind.LibretroResolvedExperimental));
         }
 
         [Test]
@@ -100,7 +118,10 @@ namespace GbaXr.Tests
         public void FrameRateIsNotAnAdminOperation()
         {
             var console = CreateConsole();
-            Assert.That(console.AvailableOperations, Has.Count.EqualTo(8));
+            // Unity 6 currently ships NUnit 3.5, where Has.Count is treated
+            // as a property constraint instead of the collection constraint
+            // supplied by newer NUnit versions.
+            Assert.That(console.AvailableOperations.Count, Is.EqualTo(8));
             Assert.That(System.Enum.GetNames(typeof(GbaAdminOperation)), Does.Not.Contain("SetTargetFrameRate"));
         }
     }

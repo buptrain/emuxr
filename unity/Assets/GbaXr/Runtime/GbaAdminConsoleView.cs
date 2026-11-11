@@ -30,11 +30,13 @@ namespace GbaXr
             int selectedRow,
             int libraryEntryCount,
             string importStatus,
-            string stateStatus)
+            string stateStatus,
+            bool coreSelectionAvailable = false,
+            bool unresolvedDiagnosticPreview = false)
         {
             _canvas.worldCamera = Camera.main;
             gameObject.SetActive(true);
-            Refresh(settings, workerState, measuredFramesPerSecond, selectedRow, libraryEntryCount, importStatus, stateStatus);
+            Refresh(settings, workerState, measuredFramesPerSecond, selectedRow, libraryEntryCount, importStatus, stateStatus, coreSelectionAvailable, unresolvedDiagnosticPreview);
         }
 
         public void Hide()
@@ -49,21 +51,32 @@ namespace GbaXr
             int selectedRow,
             int libraryEntryCount,
             string importStatus,
-            string stateStatus)
+            string stateStatus,
+            bool coreSelectionAvailable = false,
+            bool unresolvedDiagnosticPreview = false)
         {
             SetMainControlsVisible(true);
-            var rows = new[]
+            var rows = new List<string>
             {
                 $"Measured emulation FPS: {measuredFramesPerSecond:F1} (real-time, read-only)",
                 $"Presentation: {settings.PresentationMode}   ◀ / ▶",
-                $"Screen placement: {settings.PlacementMode}   ◀ / ▶",
+                $"Screen placement: {settings.PlacementMode}   ◀ / ▶"
+            };
+            if (coreSelectionAvailable)
+            {
+                rows.Add(unresolvedDiagnosticPreview
+                    ? $"Core: {settings.RequestedCore}   ◀ / ▶   [UNRESOLVED DIAGNOSTIC]"
+                    : $"Core: {settings.RequestedCore}   ◀ / ▶");
+            }
+            rows.AddRange(new[]
+            {
                 "Load ROM…",
                 "Save state · quick slot 0",
                 "Load state · quick slot 0",
                 "Apply changes",
                 "Close"
-            };
-            for (var index = 0; index < rows.Length; index++)
+            });
+            for (var index = 0; index < rows.Count; index++)
             {
                 rows[index] = (index == selectedRow ? "▶ " : "   ") + rows[index];
             }
@@ -73,12 +86,15 @@ namespace GbaXr
                 string.Join("\n\n", rows) +
                 $"\n\nROM selection: {importStatus}\n\n" +
                 $"State slot 0: {stateStatus}\n\n" +
+                (unresolvedDiagnosticPreview
+                    ? "WARNING: libretro Core preview is uncertified diagnostic output only. It does not establish parity or Galaxy XR approval.\n\n"
+                    : string.Empty) +
                 "D-pad: select/change presentation or placement   A: activate   B: close\n" +
                 "Load ROM opens the Android file picker. Save/load run only on the native worker at a frame boundary.\n" +
                 "Plane Anchoring: pinch the screen, drag it over a floor or table, then release to attach.\n" +
                 "Hand: pinch with both hands to scale while dragging.\n" +
                 "ForcePartition modes are unsafe visual experiments.\n" +
-                "Press Xbox R3 to open this console. Plane placement is hand-only.";
+                "Open this Advanced Console from Settings in the Parallax Emu menu. Plane placement is hand-only.";
         }
 
         public void ShowLibrary(

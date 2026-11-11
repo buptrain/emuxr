@@ -30,5 +30,8 @@ Store approved golden images and their SHA-256 values with fixture source metada
 4. `affine`: rotated/scaled affine background with transparent texels.
 5. `sprite_modes`: normal, semi-transparent, and OBJ-window sprites.
 6. `frame_sequence`: changing colors/frame counter to detect stale or torn publication.
+7. `input_state_replay`: VBlank-sampled A-button rising-edge state held in
+   emulated RAM. It changes an observable resolved patch and must replay after
+   an in-core save/load checkpoint without a DMA/IRQ/BIOS dependency.
 
 Each fixture emits a visible fixture/version identifier in the frame and supports deterministic stepping without audio/input timing.
