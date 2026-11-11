@@ -94,7 +94,7 @@ namespace GbaXr.Tests
             var model = Open();
             model.Move(4);
             model.Activate();
-            model.Move(GbaStartupMenuModel.RootItems.Length - 1);
+            model.Move(2);
 
             Assert.That(model.Activate(), Is.EqualTo(GbaStartupMenuAction.OpenAdvancedConsole));
             Assert.That(model.Page, Is.EqualTo(GbaStartupMenuPage.Settings));
