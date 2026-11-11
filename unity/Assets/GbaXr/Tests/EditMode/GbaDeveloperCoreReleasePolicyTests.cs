@@ -29,37 +29,45 @@ namespace GbaXr.Tests
         {
             var fs = new FakeFileSystem();
             var old = "{\"version\":\"old\"}";
-            fs.Files["root/developer-cores/mgba-libretro/active.json"] = old;
+            fs.WriteText("root/developer-cores/mgba-libretro/active.json", old);
             var manifest = new GbaDeveloperCoreReleaseManifest { coreId = "mgba-libretro", version = "1.0.0", assetUrl = "https://github.com/example/core.zip", sha256 = Hash };
             var bytes = new byte[] { (byte)'t', (byte)'e', (byte)'s', (byte)'t' };
 
             Assert.That(GbaDeveloperCoreReleaseStore.TryStageAndSelect(fs, "root", manifest, bytes, out var descriptor, out _), Is.True);
             Assert.That(descriptor.downloadedNotLoadable, Is.True);
-            Assert.That(fs.Files["root/developer-cores/mgba-libretro/previous.json"], Is.EqualTo(old));
-            StringAssert.Contains("\"version\":\"1.0.0\"", fs.Files["root/developer-cores/mgba-libretro/active.json"]);
+            Assert.That(fs.ReadText("root/developer-cores/mgba-libretro/previous.json"), Is.EqualTo(old));
+            StringAssert.Contains("\"version\":\"1.0.0\"", fs.ReadText("root/developer-cores/mgba-libretro/active.json"));
         }
 
         [Test]
         public void Rollback_RestoresPreviousDescriptorThroughTheAtomicActivePath()
         {
             var fs = new FakeFileSystem();
-            fs.Files["root/developer-cores/mgba-libretro/active.json"] = "new";
-            fs.Files["root/developer-cores/mgba-libretro/previous.json"] = "old";
+            fs.WriteText("root/developer-cores/mgba-libretro/active.json", "new");
+            fs.WriteText("root/developer-cores/mgba-libretro/previous.json", "old");
 
             Assert.That(GbaDeveloperCoreReleaseStore.TryRollback(fs, "root", "mgba-libretro", out _), Is.True);
-            Assert.That(fs.Files["root/developer-cores/mgba-libretro/active.json"], Is.EqualTo("old"));
-            Assert.That(fs.Files["root/developer-cores/mgba-libretro/rollback.json"], Is.EqualTo("new"));
+            Assert.That(fs.ReadText("root/developer-cores/mgba-libretro/active.json"), Is.EqualTo("old"));
+            Assert.That(fs.ReadText("root/developer-cores/mgba-libretro/rollback.json"), Is.EqualTo("new"));
         }
 
         private sealed class FakeFileSystem : IGbaDeveloperCoreFileSystem
         {
             internal readonly Dictionary<string, string> Files = new();
-            public bool Exists(string path) => Files.ContainsKey(path);
+            public bool Exists(string path) => Files.ContainsKey(Normalize(path));
             public void CreateDirectory(string path) { }
-            public void WriteBytes(string path, byte[] bytes) => Files[path] = System.Text.Encoding.UTF8.GetString(bytes);
-            public void WriteText(string path, string text) => Files[path] = text;
-            public string ReadText(string path) => Files[path];
-            public void Replace(string source, string destination) { Files[destination] = Files[source]; Files.Remove(source); }
+            public void WriteBytes(string path, byte[] bytes) => Files[Normalize(path)] = System.Text.Encoding.UTF8.GetString(bytes);
+            public void WriteText(string path, string text) => Files[Normalize(path)] = text;
+            public string ReadText(string path) => Files[Normalize(path)];
+            public void Replace(string source, string destination)
+            {
+                source = Normalize(source);
+                destination = Normalize(destination);
+                Files[destination] = Files[source];
+                Files.Remove(source);
+            }
+
+            private static string Normalize(string path) => path.Replace('\\', '/');
         }
     }
 }

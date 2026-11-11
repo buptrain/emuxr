@@ -89,13 +89,11 @@ namespace GbaXr.Tests
             var console = CreateConsole();
             console.Open();
             console.Request(GbaAdminOperation.ReloadCurrentRom);
-            console.Request(GbaAdminOperation.SaveState);
             console.Request(GbaAdminOperation.ResetScreenTransform);
 
             var transaction = console.Apply();
 
             Assert.That(transaction.Includes(GbaAdminOperation.ReloadCurrentRom), Is.True);
-            Assert.That(transaction.Includes(GbaAdminOperation.SaveState), Is.True);
             Assert.That(transaction.Includes(GbaAdminOperation.ResetScreenTransform), Is.True);
         }
 
@@ -107,8 +105,6 @@ namespace GbaXr.Tests
             Assert.That(console.AvailableOperations, Does.Contain(GbaAdminOperation.ReloadCurrentRom));
             Assert.That(console.AvailableOperations, Does.Contain(GbaAdminOperation.LoadStagedRom));
             Assert.That(console.AvailableOperations, Does.Contain(GbaAdminOperation.ImportRom));
-            Assert.That(console.AvailableOperations, Does.Contain(GbaAdminOperation.SaveState));
-            Assert.That(console.AvailableOperations, Does.Contain(GbaAdminOperation.LoadState));
             Assert.That(console.AvailableOperations, Does.Contain(GbaAdminOperation.SetPresentationMode));
             Assert.That(console.AvailableOperations, Does.Contain(GbaAdminOperation.SetPlacementMode));
             Assert.That(console.AvailableOperations, Does.Contain(GbaAdminOperation.ResetScreenTransform));
@@ -121,7 +117,9 @@ namespace GbaXr.Tests
             // Unity 6 currently ships NUnit 3.5, where Has.Count is treated
             // as a property constraint instead of the collection constraint
             // supplied by newer NUnit versions.
-            Assert.That(console.AvailableOperations.Count, Is.EqualTo(8));
+            // Save/load moved to the top menu; frame rate is telemetry rather
+            // than an operation. The remaining console catalog has six items.
+            Assert.That(console.AvailableOperations.Count, Is.EqualTo(6));
             Assert.That(System.Enum.GetNames(typeof(GbaAdminOperation)), Does.Not.Contain("SetTargetFrameRate"));
         }
     }

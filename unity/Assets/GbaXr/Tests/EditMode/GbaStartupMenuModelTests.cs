@@ -99,7 +99,12 @@ namespace GbaXr.Tests
                 GbaMappedControl.Down, GbaMappedControl.Left, GbaMappedControl.Select,
                 GbaMappedControl.Start, GbaMappedControl.A, GbaMappedControl.B,
                 GbaMappedControl.L, GbaMappedControl.R }, GbaStartupMenuModel.CalibrationOrder);
-            var model = Open(); model.Move(2); model.Activate();
+            var model = Open();
+            model.Move(2);
+            model.Activate();
+            Assert.That(model.Page, Is.EqualTo(GbaStartupMenuPage.Settings));
+            model.Activate();
+            Assert.That(model.Page, Is.EqualTo(GbaStartupMenuPage.ControllerMapping));
             Assert.That(model.Activate(), Is.EqualTo(GbaStartupMenuAction.BeginControllerCapture));
             Assert.That(model.CaptureControl, Is.EqualTo(GbaMappedControl.Up));
             model.AdvanceControllerCapture();
@@ -112,7 +117,11 @@ namespace GbaXr.Tests
         [Test]
         public void ControllerMapping_BackCancelsDraftWorkflow()
         {
-            var model = Open(); model.Move(2); model.Activate(); model.Activate();
+            var model = Open();
+            model.Move(2);
+            model.Activate();
+            model.Activate();
+            model.Activate();
             Assert.That(model.IsCapturingController, Is.True);
             Assert.That(model.Back(), Is.EqualTo(GbaStartupMenuAction.CancelControllerMapping));
             Assert.That(model.IsCapturingController, Is.False);

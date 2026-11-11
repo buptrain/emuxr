@@ -14,9 +14,9 @@ namespace GbaXr.Tests
         [TestCase(GbaLibretroJoypadPolicy.GbaDown, 1 << 5)]
         [TestCase(GbaLibretroJoypadPolicy.GbaR, 1 << 11)]
         [TestCase(GbaLibretroJoypadPolicy.GbaL, 1 << 10)]
-        public void EveryGbaBit_MapsToTheExpectedRetroPadId(uint gbaMask, ushort expectedRetroMask)
+        public void EveryGbaBit_MapsToTheExpectedRetroPadId(uint gbaMask, int expectedRetroMask)
         {
-            Assert.That(GbaLibretroJoypadPolicy.TranslateGbaMask(gbaMask), Is.EqualTo(expectedRetroMask));
+            Assert.That(GbaLibretroJoypadPolicy.TranslateGbaMask(gbaMask), Is.EqualTo((ushort)expectedRetroMask));
         }
 
         [Test]
