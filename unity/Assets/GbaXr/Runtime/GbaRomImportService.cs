@@ -13,7 +13,7 @@ namespace GbaXr
     [DisallowMultipleComponent]
     public sealed class GbaRomImportService : MonoBehaviour
     {
-        private const string AndroidBridgeClass = "com.tiger.gbaixr.RomImportBridge";
+        private const string AndroidBridgeClass = "io.github.buptrain.emuxr.romimport.RomImportBridge";
         private const string CatalogFileName = "rom-library.json";
         private const string CatalogTempFileName = "rom-library.json.tmp";
         private const string CatalogBackupFileName = "rom-library.json.bak";

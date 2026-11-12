@@ -4,7 +4,7 @@
         <!-- A private helper activity owns its own picker result. This works
              with Unity GameActivity without assuming UnityPlayerActivity. -->
         <activity
-            android:name="com.tiger.gbaixr.RomImportActivity"
+            android:name="io.github.buptrain.emuxr.romimport.RomImportActivity"
             android:exported="false" />
     </application>
 </manifest>

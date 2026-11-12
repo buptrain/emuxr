@@ -1,7 +1,7 @@
 apply plugin: 'com.android.library'
 
 android {
-    namespace 'com.tiger.gbaixr'
+    namespace 'io.github.buptrain.emuxr.romimport'
     // Android library source plug-ins do not inherit Unity's compile SDK.
     // Keep this aligned with Unity's generated Android target (currently 36).
     compileSdk 36

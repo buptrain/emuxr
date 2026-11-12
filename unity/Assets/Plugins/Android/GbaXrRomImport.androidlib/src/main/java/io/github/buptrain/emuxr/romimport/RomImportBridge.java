@@ -1,4 +1,4 @@
-package com.tiger.gbaixr;
+package io.github.buptrain.emuxr.romimport;
 
 import android.app.Activity;
 import android.content.Intent;
