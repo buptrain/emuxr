@@ -3,14 +3,14 @@ using System.Collections.Generic;
 
 namespace GbaXr
 {
-    internal enum GbaStartupMenuPage { Root, Core, Settings, ControllerMapping, ViewMode, StateSave, StateLoad }
-    internal enum GbaStartupMenuAction { None, LoadRom, OpenStateSave, OpenStateLoad, SaveStateSlot, LoadStateSlot, CommitCore, ApplyViewMode, OpenAdvancedConsole, BeginControllerCapture, ApplyControllerMapping, ResetControllerMapping, CancelControllerMapping, Close }
+    internal enum GbaStartupMenuPage { Root, Core, Settings, ControllerMapping, PresentationMode, ViewMode, StateSave, StateLoad }
+    internal enum GbaStartupMenuAction { None, LoadRom, OpenStateSave, OpenStateLoad, SaveStateSlot, LoadStateSlot, CommitCore, ApplyPresentationMode, ApplyViewMode, OpenAdvancedConsole, BeginControllerCapture, ApplyControllerMapping, ResetControllerMapping, CancelControllerMapping, Close }
 
     /// <summary>Controller-only startup navigation. This model has no Unity UI or native-worker dependency.</summary>
     internal sealed class GbaStartupMenuModel
     {
         internal static readonly string[] RootItems = { "Core Selection", "Load ROM", "Save State", "Load State", "Settings" };
-        internal static readonly string[] SettingsItems = { "Controller Mapping", "View Mode", "Advanced Console" };
+        internal static readonly string[] SettingsItems = { "Controller Mapping", "Presentation Mode", "View Mode", "Advanced Console" };
         internal static readonly string[] MappingLines =
         {
             "A: GBA A     B: GBA B",
@@ -26,6 +26,7 @@ namespace GbaXr
         internal bool IsOpen { get; private set; }
         internal GbaStartupMenuPage Page { get; private set; } = GbaStartupMenuPage.Root;
         internal GbaCoreKind SelectedCore { get; private set; } = GbaCoreKind.DirectMgba;
+        internal GbaNativeFrameDriver.PresentationMode SelectedPresentationMode { get; private set; } = GbaNativeFrameDriver.PresentationMode.Original;
         internal GbaScreenPlacementMode SelectedViewMode { get; private set; } = GbaScreenPlacementMode.VirtualField;
         internal int SelectedIndex => _selection.TryGetValue(Page, out var value) ? value : 0;
         internal int SelectedStateSlot => SelectedIndex;
@@ -43,27 +44,43 @@ namespace GbaXr
             GbaStartupMenuPage.Root => RootItems.Length,
             GbaStartupMenuPage.Core => _coreItems.Count,
             GbaStartupMenuPage.Settings => SettingsItems.Length,
+            GbaStartupMenuPage.PresentationMode => 2,
             GbaStartupMenuPage.StateSave or GbaStartupMenuPage.StateLoad => GbaSaveStatePolicy.SlotCount,
             GbaStartupMenuPage.ControllerMapping => IsCapturingController ? 0 : (IsReviewingController ? 2 : 1),
             GbaStartupMenuPage.ViewMode => 2,
             _ => 0
         };
 
-        internal void Open(GbaCoreKind activeCore, GbaScreenPlacementMode activeViewMode, bool libretroAvailable)
+        internal void Open(
+            GbaCoreKind activeCore,
+            GbaNativeFrameDriver.PresentationMode activePresentationMode,
+            GbaScreenPlacementMode activeViewMode,
+            bool libretroAvailable)
         {
-            Configure(activeCore, activeViewMode, libretroAvailable);
+            Configure(activeCore, activePresentationMode, activeViewMode, libretroAvailable);
             IsOpen = true;
             Page = GbaStartupMenuPage.Root;
             ClampSelection();
         }
 
-        internal void Configure(GbaCoreKind activeCore, GbaScreenPlacementMode activeViewMode, bool libretroAvailable)
+        internal void Configure(
+            GbaCoreKind activeCore,
+            GbaNativeFrameDriver.PresentationMode activePresentationMode,
+            GbaScreenPlacementMode activeViewMode,
+            bool libretroAvailable)
         {
             SelectedCore = activeCore;
+            SelectedPresentationMode = activePresentationMode == GbaNativeFrameDriver.PresentationMode.ForcePartitionExtendedParallax
+                ? GbaNativeFrameDriver.PresentationMode.ForcePartitionExtendedParallax
+                : GbaNativeFrameDriver.PresentationMode.Original;
             SelectedViewMode = activeViewMode;
             _coreItems.Clear();
             _coreItems.Add(GbaCoreKind.DirectMgba);
             if (libretroAvailable) _coreItems.Add(GbaCoreKind.LibretroResolvedExperimental);
+            _selection[GbaStartupMenuPage.PresentationMode] =
+                SelectedPresentationMode == GbaNativeFrameDriver.PresentationMode.Original ? 0 : 1;
+            _selection[GbaStartupMenuPage.ViewMode] =
+                SelectedViewMode == GbaScreenPlacementMode.VirtualField ? 0 : 1;
             ClampSelection();
         }
 
@@ -112,6 +129,9 @@ namespace GbaXr
                 case GbaStartupMenuPage.ViewMode:
                     Page = GbaStartupMenuPage.Settings;
                     return GbaStartupMenuAction.None;
+                case GbaStartupMenuPage.PresentationMode:
+                    Page = GbaStartupMenuPage.Settings;
+                    return GbaStartupMenuAction.None;
                 default:
                     return GbaStartupMenuAction.None;
             }
@@ -141,6 +161,12 @@ namespace GbaXr
                         : GbaScreenPlacementMode.PlaneAnchoring;
                     Page = GbaStartupMenuPage.Settings;
                     return GbaStartupMenuAction.ApplyViewMode;
+                case GbaStartupMenuPage.PresentationMode:
+                    SelectedPresentationMode = SelectedIndex == 0
+                        ? GbaNativeFrameDriver.PresentationMode.Original
+                        : GbaNativeFrameDriver.PresentationMode.ForcePartitionExtendedParallax;
+                    Page = GbaStartupMenuPage.Settings;
+                    return GbaStartupMenuAction.ApplyPresentationMode;
                 case GbaStartupMenuPage.ControllerMapping:
                     if (IsReviewingController)
                         return SelectedIndex == 0 ? GbaStartupMenuAction.ApplyControllerMapping : GbaStartupMenuAction.CancelControllerMapping;
@@ -189,7 +215,8 @@ namespace GbaXr
             switch (SelectedIndex)
             {
                 case 0: Page = GbaStartupMenuPage.ControllerMapping; return GbaStartupMenuAction.None;
-                case 1: Page = GbaStartupMenuPage.ViewMode; return GbaStartupMenuAction.None;
+                case 1: Page = GbaStartupMenuPage.PresentationMode; return GbaStartupMenuAction.None;
+                case 2: Page = GbaStartupMenuPage.ViewMode; return GbaStartupMenuAction.None;
                 default: return GbaStartupMenuAction.OpenAdvancedConsole;
             }
         }

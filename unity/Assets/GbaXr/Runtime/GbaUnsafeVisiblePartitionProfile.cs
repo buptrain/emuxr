@@ -7,6 +7,22 @@ namespace GbaXr
     /// </summary>
     public static class GbaForcePartitionProfile
     {
+        /// <summary>
+        /// Decides whether an explicitly selected ForcePartition presentation may use a
+        /// visible-source lease. A visible partition is intrinsically an unsafe depth
+        /// experiment: it is not an independent-PPU-layer extraction and will not
+        /// restore pixels that were hidden by the original GBA composition.
+        ///
+        /// The caller must still reject malformed descriptors before passing
+        /// <paramref name="hasStructurallyValidVisiblePartition"/>. The separate
+        /// zero-parallax recomposition verifier remains valuable telemetry, but must
+        /// not turn an explicit force selection into a silent resolved-frame fallback.
+        /// </summary>
+        internal static bool ShouldActivateExplicitForcePartition(
+            bool forcePartitionRequested,
+            bool hasStructurallyValidVisiblePartition) =>
+            forcePartitionRequested && hasStructurallyValidVisiblePartition;
+
         public static bool TryGetDepth(int source, bool extended, out float localZ)
         {
             // The camera looks along +Z. Each GBA source receives a stable

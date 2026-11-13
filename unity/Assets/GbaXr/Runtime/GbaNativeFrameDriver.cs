@@ -94,6 +94,8 @@ namespace GbaXr
         private bool _verifiedProvenanceContract;
         private bool _verifiedVisiblePartition;
         private bool _forcePartitionVerified;
+        private bool _loggedUnverifiedForcePartition;
+        private bool _loggedUnavailableForcePartition;
         private bool _verifiedIndependentBg0;
         private bool _verifiedIndependentBgTie;
         private bool _verifiedIndependentObj;
@@ -1344,15 +1346,32 @@ namespace GbaXr
             var extendedForcePartitionRequested = presentationMode == PresentationMode.ForcePartitionExtendedParallax;
             var forcePartitionParallaxRequested = presentationMode is PresentationMode.ForcePartitionParallax or
                 PresentationMode.ForcePartitionExtendedParallax;
-            var forcePartitionAvailable = forcePartitionRequested && _forcePartitionVerified &&
-                                          lease.LayerSemantics == 1 &&
-                                          HasValidForcePartition(lease);
+            var hasStructurallyValidVisiblePartition = lease.LayerSemantics == 1 &&
+                                                      HasValidForcePartition(lease);
+            var forcePartitionAvailable = GbaForcePartitionProfile.ShouldActivateExplicitForcePartition(
+                forcePartitionRequested,
+                hasStructurallyValidVisiblePartition);
             if (forcePartitionRequested && !_loggedForcePartition)
             {
                 _loggedForcePartition = true;
                 Debug.LogWarning(
                     $"GBA XR: {presentationMode} maps final source pixels to depth bands. " +
                     "It can reveal missing occluded pixels, break blending, or show holes during head motion.");
+            }
+            if (forcePartitionAvailable && !_forcePartitionVerified && !_loggedUnverifiedForcePartition)
+            {
+                _loggedUnverifiedForcePartition = true;
+                Debug.LogWarning(
+                    "GBA XR: ForcePartition is using a structurally valid visible-source partition before " +
+                    "the zero-parallax verifier has approved it. This is an explicit unsafe presentation choice.");
+            }
+            else if (forcePartitionRequested && !forcePartitionAvailable && !_loggedUnavailableForcePartition)
+            {
+                _loggedUnavailableForcePartition = true;
+                Debug.LogWarning(
+                    $"GBA XR: ForcePartition fallback: lease semantics={lease.LayerSemantics}, " +
+                    $"layerCount={lease.LayerCount}, structuralVisiblePartition={hasStructurallyValidVisiblePartition}, " +
+                    $"zeroParallaxVerified={_forcePartitionVerified}. The active direct core is not publishing a usable visible-source partition.");
             }
 
             var forcingUnprofiledCandidates = presentationMode == PresentationMode.ForceUnprofiledCandidates;
@@ -1576,6 +1595,7 @@ namespace GbaXr
             if (_adminConsole != null && _adminConsole.IsOpen) CloseAdminConsole();
             _startupMenu.Open(
                 _adminConsole?.Active.RequestedCore ?? GbaCoreKind.DirectMgba,
+                presentationMode,
                 _screenRoot.PlacementMode,
                 IsLibretroCoreSelectionAvailable);
             _startupMenuRefreshPending = false;
@@ -1688,6 +1708,9 @@ namespace GbaXr
                 case GbaStartupMenuAction.ApplyViewMode:
                     CommitStartupViewMode(_startupMenu.SelectedViewMode);
                     break;
+                case GbaStartupMenuAction.ApplyPresentationMode:
+                    CommitStartupPresentationMode(_startupMenu.SelectedPresentationMode);
+                    break;
                 case GbaStartupMenuAction.OpenAdvancedConsole:
                     CloseStartupMenu();
                     OpenAdminConsole(GetWorkerState());
@@ -1732,6 +1755,15 @@ namespace GbaXr
             ApplyAdminConsole();
             _adminConsole.Close();
             Debug.Log($"GBA XR: startup menu applied view mode {mode}.");
+        }
+
+        private void CommitStartupPresentationMode(PresentationMode mode)
+        {
+            _adminConsole.Open();
+            _adminConsole.SetDraftPresentationMode(mode);
+            ApplyAdminConsole();
+            _adminConsole.Close();
+            Debug.Log($"GBA XR: startup menu applied presentation mode {mode}.");
         }
 
         private void OpenAdminConsole(int workerState)
@@ -2364,6 +2396,8 @@ namespace GbaXr
             _verifiedProvenanceContract = false;
             _verifiedVisiblePartition = false;
             _forcePartitionVerified = false;
+            _loggedUnverifiedForcePartition = false;
+            _loggedUnavailableForcePartition = false;
             _verifiedIndependentBg0 = false;
             _verifiedIndependentBgTie = false;
             _verifiedIndependentObj = false;

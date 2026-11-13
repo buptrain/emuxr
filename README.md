@@ -8,13 +8,9 @@ use rendering-layer information to explore a little depth for fun.
 > endorsed by Microsoft, the mGBA project, console manufacturers, or game
 > rights holders. No ROMs, BIOS files, or copyrighted game assets are included.
 
-![A 2016 HoloLens prototype: classic game content and HoloLens UI placed together in the physical world.](docs/images/hololens-2016-prototype.jpg)
-
-*Historical HoloLens reference image from the original internal prototype.*
-
 ## The story
 
-The project started in 2016 inside Microsoft for HoloLens. It was targeting to
+The project originated in 2016 inside Microsoft as a hackathon project for HoloLens. It was targeting to
 provide more game options, leveraging the good retro gaming community. To show
 the uniqueness, we tried to add depth data (Z-axis) from the classic game
 rendering pipeline for fun. The project was built inside Unity but not publicly

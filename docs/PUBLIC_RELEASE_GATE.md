@@ -54,6 +54,9 @@ the exact commit/tag being released.
 - [ ] State that users must provide games they are legally entitled to use.
 - [ ] State that EmuXR is independent and is not affiliated with or endorsed
   by the mGBA project or game-rights holders.
+- [ ] Review every README, release, and store screenshot that shows
+  third-party game content or platform UI; publish it only with the necessary
+  permission or remove it.
 - [ ] Publish install, update, rollback, support, and known-issues guidance.
 
 ## Future GPL-core gate

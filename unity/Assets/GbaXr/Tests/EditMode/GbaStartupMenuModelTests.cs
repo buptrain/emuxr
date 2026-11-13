@@ -74,7 +74,7 @@ namespace GbaXr.Tests
             model.Move(4);
             model.Activate();
             Assert.That(model.Page, Is.EqualTo(GbaStartupMenuPage.Settings));
-            model.Move(1);
+            model.Move(2);
             model.Activate();
             Assert.That(model.Page, Is.EqualTo(GbaStartupMenuPage.ViewMode));
             model.Move(1);
@@ -82,7 +82,7 @@ namespace GbaXr.Tests
             Assert.That(model.Activate(), Is.EqualTo(GbaStartupMenuAction.ApplyViewMode));
             Assert.That(model.SelectedViewMode, Is.EqualTo(GbaScreenPlacementMode.PlaneAnchoring));
             Assert.That(model.Page, Is.EqualTo(GbaStartupMenuPage.Settings));
-            Assert.That(model.SelectedIndex, Is.EqualTo(1));
+            Assert.That(model.SelectedIndex, Is.EqualTo(2));
             model.Back();
             Assert.That(model.Page, Is.EqualTo(GbaStartupMenuPage.Root));
             Assert.That(model.SelectedIndex, Is.EqualTo(4));
@@ -94,10 +94,44 @@ namespace GbaXr.Tests
             var model = Open();
             model.Move(4);
             model.Activate();
-            model.Move(2);
+            model.Move(3);
 
             Assert.That(model.Activate(), Is.EqualTo(GbaStartupMenuAction.OpenAdvancedConsole));
             Assert.That(model.Page, Is.EqualTo(GbaStartupMenuPage.Settings));
+        }
+
+        [Test]
+        public void PresentationMode_OffersOriginalAndExtendedParallaxOnly()
+        {
+            var model = Open();
+            model.Move(GbaStartupMenuModel.RootItems.Length - 1);
+            model.Activate();
+            model.Move(1);
+
+            Assert.That(model.Activate(), Is.EqualTo(GbaStartupMenuAction.None));
+            Assert.That(model.Page, Is.EqualTo(GbaStartupMenuPage.PresentationMode));
+            Assert.That(model.ItemCount, Is.EqualTo(2));
+            Assert.That(model.SelectedPresentationMode, Is.EqualTo(GbaNativeFrameDriver.PresentationMode.Original));
+
+            model.Move(1);
+            Assert.That(model.Activate(), Is.EqualTo(GbaStartupMenuAction.ApplyPresentationMode));
+            Assert.That(model.SelectedPresentationMode, Is.EqualTo(GbaNativeFrameDriver.PresentationMode.ForcePartitionExtendedParallax));
+            Assert.That(model.Page, Is.EqualTo(GbaStartupMenuPage.Settings));
+            Assert.That(model.SelectedIndex, Is.EqualTo(1));
+        }
+
+        [Test]
+        public void PresentationMode_ReflectsTheActiveExtendedParallaxSelection()
+        {
+            var model = Open(presentationMode: GbaNativeFrameDriver.PresentationMode.ForcePartitionExtendedParallax);
+            model.Move(GbaStartupMenuModel.RootItems.Length - 1);
+            model.Activate();
+            model.Move(1);
+            model.Activate();
+
+            Assert.That(model.Page, Is.EqualTo(GbaStartupMenuPage.PresentationMode));
+            Assert.That(model.SelectedPresentationMode, Is.EqualTo(GbaNativeFrameDriver.PresentationMode.ForcePartitionExtendedParallax));
+            Assert.That(model.SelectedIndex, Is.EqualTo(1));
         }
 
         [Test]
@@ -145,10 +179,16 @@ namespace GbaXr.Tests
             Assert.That(model.Page, Is.EqualTo(GbaStartupMenuPage.Settings));
         }
 
-        private static GbaStartupMenuModel Open(bool libretroAvailable = false)
+        private static GbaStartupMenuModel Open(
+            bool libretroAvailable = false,
+            GbaNativeFrameDriver.PresentationMode presentationMode = GbaNativeFrameDriver.PresentationMode.Original)
         {
             var model = new GbaStartupMenuModel();
-            model.Open(GbaCoreKind.DirectMgba, GbaScreenPlacementMode.VirtualField, libretroAvailable);
+            model.Open(
+                GbaCoreKind.DirectMgba,
+                presentationMode,
+                GbaScreenPlacementMode.VirtualField,
+                libretroAvailable);
             return model;
         }
     }

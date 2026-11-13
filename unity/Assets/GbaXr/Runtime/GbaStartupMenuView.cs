@@ -93,6 +93,9 @@ namespace GbaXr
                     return cores;
                 case GbaStartupMenuPage.Settings:
                     return new List<string>(GbaStartupMenuModel.SettingsItems);
+                case GbaStartupMenuPage.PresentationMode:
+                    detail = "Original preserves the resolved GBA screen. Extended Parallax is an experimental 2.5D view with wider layer spacing and head-motion parallax.";
+                    return new List<string> { "Original", "Extended Parallax" };
                 case GbaStartupMenuPage.StateSave:
                     detail = "Choose one of eight ROM-specific save slots.";
                     return new List<string>(model.StateSlots);
@@ -121,6 +124,7 @@ namespace GbaXr
             GbaStartupMenuPage.Core => "Core Selection",
             GbaStartupMenuPage.Settings => "Settings",
             GbaStartupMenuPage.ControllerMapping => "Controller Mapping",
+            GbaStartupMenuPage.PresentationMode => "Presentation Mode",
             GbaStartupMenuPage.ViewMode => "View Mode",
             GbaStartupMenuPage.StateSave => "Save State",
             GbaStartupMenuPage.StateLoad => "Load State",

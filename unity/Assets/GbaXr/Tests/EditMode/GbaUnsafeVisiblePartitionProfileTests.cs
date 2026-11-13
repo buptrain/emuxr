@@ -5,6 +5,31 @@ namespace GbaXr.Tests
     public class GbaForcePartitionProfileTests
     {
         [Test]
+        public void ExplicitForcePartition_UsesAStructurallyValidVisiblePartitionBeforeDiagnosticVerification()
+        {
+            Assert.That(
+                GbaForcePartitionProfile.ShouldActivateExplicitForcePartition(
+                    forcePartitionRequested: true,
+                    hasStructurallyValidVisiblePartition: true),
+                Is.True);
+        }
+
+        [Test]
+        public void ExplicitForcePartition_RejectsMissingOrDisabledVisiblePartitions()
+        {
+            Assert.That(
+                GbaForcePartitionProfile.ShouldActivateExplicitForcePartition(
+                    forcePartitionRequested: false,
+                    hasStructurallyValidVisiblePartition: true),
+                Is.False);
+            Assert.That(
+                GbaForcePartitionProfile.ShouldActivateExplicitForcePartition(
+                    forcePartitionRequested: true,
+                    hasStructurallyValidVisiblePartition: false),
+                Is.False);
+        }
+
+        [Test]
         public void SourceBuckets_MapToStableExperimentalDepthBands()
         {
             Assert.That(GbaForcePartitionProfile.TryGetDepth(5, false, out var obj), Is.True);

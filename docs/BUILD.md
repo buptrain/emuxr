@@ -245,7 +245,8 @@ The helper activity launches an `ACTION_OPEN_DOCUMENT` picker with
 It intentionally does **not** use persisted document access: the product owns
 the copied file after selection. Do not add `READ_MEDIA_*`, `READ_EXTERNAL_STORAGE`,
 or broad filesystem permissions for this flow. Confirm the generated Android
-manifest retains `com.tiger.gbaixr.RomImportActivity` as `exported="false"`.
+manifest retains `io.github.buptrain.emuxr.romimport.RomImportActivity` as
+`exported="false"`.
 
 Choose **Load ROM** from the admin console to open the picker each time. A valid
 selection is copied into app-private storage and launched; cancellation or an
