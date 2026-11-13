@@ -1,0 +1,36 @@
+EmuXR third-party notices
+==========================
+
+mGBA Parallax / mGBA
+--------------------
+
+EmuXR's Android ARM64 APK bundles libgba_xr.so, an instrumented build based on
+mGBA. mGBA and the instrumented mGBA source files are licensed under the
+Mozilla Public License, version 2.0 (MPL-2.0).
+
+For the EmuXR v0.1.0-rc.4 release, the bundled core must exactly match this
+public source release:
+
+  Repository: https://github.com/buptrain/mgba-parallax
+  Source tag: v0.1.0-rc.3
+  Source commit: 91c4761abb86f74dcc66bac7347f0c4faa6e1540
+  Upstream mGBA base: a67176cd3e6bf60a5016d7adc94357142dd12617
+  Bridge ABI: 3
+  Core SHA-256: d6b5498e8654f205e781c6a3ae7491cd419f1f559dac480ce227f88399f9733c
+
+The mGBA Parallax repository contains the corresponding source code, MPL-2.0
+license text, notices, instrumentation documentation, and core release
+provenance. Recipients may obtain and exercise their MPL-2.0 rights in that
+source code from the URL above.
+
+This notice does not grant rights in the mGBA name or any contributor
+trademarks. EmuXR is independent and is not affiliated with or endorsed by the
+mGBA project.
+
+EmuXR-authored source
+---------------------
+
+Unless a file states otherwise, EmuXR-authored source code is licensed under
+the Apache License, version 2.0. See LICENSE.
+
+No ROMs, BIOS files, save files, or copyrighted game assets are included.
